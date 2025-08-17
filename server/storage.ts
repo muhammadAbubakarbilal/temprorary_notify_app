@@ -14,6 +14,7 @@ import {
   recurrenceRules,
   featureFlags,
   auditLogs,
+  attachments,
   type User,
   type UpsertUser,
   type InsertUser,
@@ -45,6 +46,8 @@ import {
   type InsertFeatureFlag,
   type AuditLog,
   type InsertAuditLog,
+  type Attachment,
+  type InsertAttachment,
   type AITaskSuggestion,
   type ProjectWithStats,
   type TaskWithTimeTracking,
@@ -109,6 +112,25 @@ export interface IStorage {
   getTasksByUser(userId: string): Promise<Task[]>;
   getTimeTrackingStats(userId: string): Promise<{ totalHours: number; weeklyHours: number; averagePerDay: number }>;
   getProductivityStats(userId: string): Promise<{ completionRate: number; averageTasksPerDay: number; streak: number }>;
+
+  // Attachments (Premium)
+  createAttachment(attachment: InsertAttachment): Promise<Attachment>;
+  getAttachment(id: string): Promise<Attachment | undefined>;
+  getAttachmentsByNote(noteId: string): Promise<Attachment[]>;
+  getAttachmentsByTask(taskId: string): Promise<Attachment[]>;
+  deleteAttachment(id: string): Promise<boolean>;
+
+  // Enhanced Analytics (Premium)
+  getUserTasks(userId: string): Promise<Task[]>;
+  getUserTimeEntries(userId: string): Promise<TimeEntry[]>;
+
+  // Team Collaboration (Premium)
+  createWorkspace(workspace: InsertWorkspace): Promise<Workspace>;
+  getWorkspace(id: string): Promise<Workspace | undefined>;
+  createMembership(membership: InsertMembership): Promise<Membership>;
+  getWorkspaceMemberships(workspaceId: string): Promise<Membership[]>;
+  getWorkspaceMembers(workspaceId: string): Promise<(Membership & { user: User })[]>;
+  updateMembershipRole(workspaceId: string, userId: string, role: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -492,6 +514,83 @@ export class DatabaseStorage implements IStorage {
       averageTasksPerDay: 0,
       streak: 0
     };
+  }
+
+  // Attachments (Premium)
+  async createAttachment(attachment: InsertAttachment): Promise<Attachment> {
+    const [result] = await db.insert(attachments).values(attachment).returning();
+    return result;
+  }
+
+  async getAttachment(id: string): Promise<Attachment | undefined> {
+    const [attachment] = await db.select().from(attachments).where(eq(attachments.id, id));
+    return attachment;
+  }
+
+  async getAttachmentsByNote(noteId: string): Promise<Attachment[]> {
+    return await db.select().from(attachments).where(eq(attachments.noteId, noteId));
+  }
+
+  async getAttachmentsByTask(taskId: string): Promise<Attachment[]> {
+    return await db.select().from(attachments).where(eq(attachments.taskId, taskId));
+  }
+
+  async deleteAttachment(id: string): Promise<boolean> {
+    const result = await db.delete(attachments).where(eq(attachments.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // Enhanced Analytics (Premium)
+  async getUserTasks(userId: string): Promise<Task[]> {
+    return await db
+      .select()
+      .from(tasks)
+      .innerJoin(projects, eq(tasks.projectId, projects.id))
+      .where(eq(projects.authorId, userId));
+  }
+
+  async getUserTimeEntries(userId: string): Promise<TimeEntry[]> {
+    return await db
+      .select()
+      .from(timeEntries)
+      .innerJoin(tasks, eq(timeEntries.taskId, tasks.id))
+      .innerJoin(projects, eq(tasks.projectId, projects.id))
+      .where(eq(projects.authorId, userId));
+  }
+
+  // Team Collaboration (Premium)
+  async createWorkspace(workspace: InsertWorkspace): Promise<Workspace> {
+    const [result] = await db.insert(workspaces).values(workspace).returning();
+    return result;
+  }
+
+  async getWorkspace(id: string): Promise<Workspace | undefined> {
+    const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, id));
+    return workspace;
+  }
+
+  async createMembership(membership: InsertMembership): Promise<Membership> {
+    const [result] = await db.insert(memberships).values(membership).returning();
+    return result;
+  }
+
+  async getWorkspaceMemberships(workspaceId: string): Promise<Membership[]> {
+    return await db.select().from(memberships).where(eq(memberships.workspaceId, workspaceId));
+  }
+
+  async getWorkspaceMembers(workspaceId: string): Promise<(Membership & { user: User })[]> {
+    return await db
+      .select()
+      .from(memberships)
+      .innerJoin(users, eq(memberships.userId, users.id))
+      .where(eq(memberships.workspaceId, workspaceId));
+  }
+
+  async updateMembershipRole(workspaceId: string, userId: string, role: string): Promise<void> {
+    await db
+      .update(memberships)
+      .set({ role })
+      .where(and(eq(memberships.workspaceId, workspaceId), eq(memberships.userId, userId)));
   }
 }
 

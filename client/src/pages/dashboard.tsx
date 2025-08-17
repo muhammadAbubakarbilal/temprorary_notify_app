@@ -15,11 +15,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Share, MoreHorizontal, Menu, Edit, CheckSquare, Clock, Crown, LogOut, Settings } from "lucide-react";
+import { Share, MoreHorizontal, Menu, Edit, CheckSquare, Clock, Crown, LogOut, Settings, Calendar, Users, FileText, BarChart3 } from "lucide-react";
 import UserSettings from "@/components/user-settings";
 import Reports from "@/components/reports";
+import RecurringTasks from "@/components/recurring-tasks";
+import TeamCollaboration from "@/components/team-collaboration";
+import FileAttachments from "@/components/file-attachments";
+import AnalyticsDashboard from "@/components/analytics-dashboard";
 
-type TabType = 'notes' | 'tasks' | 'time' | 'reports' | 'settings';
+
+type TabType = 'notes' | 'tasks' | 'time' | 'reports' | 'settings' | 'recurring' | 'team' | 'attachments' | 'analytics';
 type SpaceType = 'personal' | 'professional';
 
 
@@ -93,6 +98,11 @@ export default function Dashboard() {
     { id: 'tasks', label: 'Tasks', icon: CheckSquare },
     { id: 'time', label: 'Time Tracking', icon: Clock },
     { id: 'reports', label: 'Reports', icon: MoreHorizontal }, // Added Reports tab
+    { id: 'recurring', label: 'Recurring Tasks', icon: Calendar },
+    { id: 'team', label: 'Team Collaboration', icon: Users },
+    { id: 'attachments', label: 'Attachments', icon: FileText }, // Changed FileAttachments icon to FileText
+    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+    { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   return (
@@ -260,15 +270,24 @@ export default function Dashboard() {
           {activeTab === 'reports' && ( // Render Reports component when 'reports' tab is active
             <Reports />
           )}
+          {activeTab === 'recurring' && (
+            <RecurringTasks projectId={currentProjectId} />
+          )}
+          {activeTab === 'team' && (
+            <TeamCollaboration projectId={currentProjectId} />
+          )}
+          {activeTab === 'attachments' && (
+            <FileAttachments projectId={currentProjectId} />
+          )}
+          {activeTab === 'analytics' && (
+            <AnalyticsDashboard projectId={currentProjectId} />
+          )}
           {activeTab === 'settings' && ( // Render UserSettings component when 'settings' tab is active
             <UserSettings />
           )}
-          {activeTab === 'notes' && !currentProject && (
-            <div className="flex-1 flex items-center justify-center text-muted-foreground">
-              <p>Create a project to get started with notes and tasks.</p>
-            </div>
-          )}
-          {activeTab === 'tasks' && !currentProject && (
+
+          {/* Conditional rendering for empty states */}
+          {!currentProject && (activeTab === 'notes' || activeTab === 'tasks') && (
             <div className="flex-1 flex items-center justify-center text-muted-foreground">
               <p>Create a project to get started with notes and tasks.</p>
             </div>

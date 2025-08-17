@@ -2,16 +2,44 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Clock, Calendar, TrendingUp, Play, OctagonMinus, Pause, Download, Edit } from "lucide-react";
+import { Clock, Calendar, TrendingUp, Play, OctagonMinus, Pause, Download, Edit, BarChart3, Target } from "lucide-react";
 import { formatTime, formatDuration } from "@/lib/time-utils";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 interface TimeTrackingProps {
   projectId: string;
+}
+
+interface TimeEntry {
+  id: string;
+  taskId: string;
+  startTime: string;
+  endTime?: string;
+  duration: number;
+  description?: string;
+  createdAt: string;
+}
+
+interface ActiveTimer {
+  id: string;
+  taskId: string;
+  startTime: string;
+  createdAt: string;
+}
+
+interface TimeTrackingStats {
+  totalTime: number;
+  todayTime: number;
+  weekTime: number;
+  averageSession: number;
+  productivity: number;
 }
 
 export default function TimeTracking({ projectId }: TimeTrackingProps) {
@@ -158,8 +186,8 @@ export default function TimeTracking({ projectId }: TimeTrackingProps) {
 
   const stopTimerMutation = useMutation({
     mutationFn: async (taskId: string) => {
-      const response = await apiRequest('POST', '/api/timer/stop', { taskId });
-      return response.json();
+      const response = await apiRequest('/timer/stop', { method: 'POST', body: JSON.stringify({ taskId }) });
+      return response;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/timer/active'] });
@@ -179,10 +207,46 @@ export default function TimeTracking({ projectId }: TimeTrackingProps) {
     },
   });
 
+  const startTimer = useMutation({
+    mutationFn: async (taskId: string) => {
+      const response = await apiRequest('/timer/start', { method: 'POST', body: JSON.stringify({ taskId }) });
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/timer/active'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/timers/active'] });
+      toast({
+        title: "Timer started",
+        description: "Time tracking has begun.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to start timer. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Calculate time statistics
   const totalTimeToday = (tasks as any[]).reduce((sum: number, task: any) => sum + (task.totalTime || 0), 0);
   const totalTimeWeek = totalTimeToday; // Simplified for demo
   const averagePerDay = Math.floor(totalTimeWeek / 7);
+
+  // Fetch time tracking statistics
+  const { data: stats } = useQuery({
+    queryKey: ['time-stats', projectId],
+    queryFn: () => apiRequest(`/time-entries/stats/${projectId}`),
+  });
+
+  const timeStats: TimeTrackingStats = stats || {
+    totalTime: 0,
+    todayTime: 0,
+    weekTime: 0,
+    averageSession: 0,
+    productivity: 0
+  };
 
   return (
     <div className="h-full p-6 overflow-y-auto custom-scrollbar">
@@ -196,7 +260,7 @@ export default function TimeTracking({ projectId }: TimeTrackingProps) {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-ai-text mb-1" data-testid="time-today">
-                {formatTime(totalTimeToday)}
+                {formatTime(timeStats.todayTime)}
               </div>
               <CardDescription className="text-sm">+1h 15m from yesterday</CardDescription>
             </CardContent>
@@ -209,7 +273,7 @@ export default function TimeTracking({ projectId }: TimeTrackingProps) {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-ai-text mb-1" data-testid="time-week">
-                {formatTime(totalTimeWeek)}
+                {formatTime(timeStats.weekTime)}
               </div>
               <CardDescription className="text-sm">5 days tracked</CardDescription>
             </CardContent>
@@ -222,7 +286,7 @@ export default function TimeTracking({ projectId }: TimeTrackingProps) {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-ai-text mb-1" data-testid="time-average">
-                {formatTime(averagePerDay)}
+                {formatTime(timeStats.averageSession)}
               </div>
               <CardDescription className="text-sm text-accent">+12% this week</CardDescription>
             </CardContent>

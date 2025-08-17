@@ -1,69 +1,141 @@
-export function formatTime(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  
-  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-}
 
-export function formatDuration(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  } else if (minutes > 0) {
+export function formatTime(hours: number): string {
+  if (hours < 1) {
+    const minutes = Math.round(hours * 60);
     return `${minutes}m`;
-  } else {
-    return `${seconds}s`;
   }
+  
+  const wholeHours = Math.floor(hours);
+  const minutes = Math.round((hours - wholeHours) * 60);
+  
+  if (minutes === 0) {
+    return `${wholeHours}h`;
+  }
+  
+  return `${wholeHours}h ${minutes}m`;
 }
 
-export function parseTimeInput(timeString: string): number {
-  // Parse formats like "2h 30m", "1:30", "90m", etc.
-  const hourMinuteRegex = /^(\d+)h\s*(\d+)m$/i;
-  const colonFormatRegex = /^(\d+):(\d+)$/;
-  const minutesOnlyRegex = /^(\d+)m$/i;
-  const hoursOnlyRegex = /^(\d+)h$/i;
-  
-  let match = timeString.match(hourMinuteRegex);
-  if (match) {
-    return parseInt(match[1]) * 3600 + parseInt(match[2]) * 60;
+export function formatDuration(minutes: number): string {
+  if (minutes < 60) {
+    return `${minutes}m`;
   }
   
-  match = timeString.match(colonFormatRegex);
-  if (match) {
-    return parseInt(match[1]) * 3600 + parseInt(match[2]) * 60;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  
+  if (remainingMinutes === 0) {
+    return `${hours}h`;
   }
   
-  match = timeString.match(minutesOnlyRegex);
-  if (match) {
-    return parseInt(match[1]) * 60;
-  }
-  
-  match = timeString.match(hoursOnlyRegex);
-  if (match) {
-    return parseInt(match[1]) * 3600;
-  }
-  
-  return 0;
+  return `${hours}h ${remainingMinutes}m`;
 }
 
-export function getTimeOfDay(): 'morning' | 'afternoon' | 'evening' {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'morning';
-  if (hour < 17) return 'afternoon';
-  return 'evening';
+export function parseTimeString(timeStr: string): number {
+  // Parse time strings like "2h 30m", "1.5h", "90m"
+  const hourMatch = timeStr.match(/(\d+(?:\.\d+)?)h/);
+  const minuteMatch = timeStr.match(/(\d+)m/);
+  
+  let totalMinutes = 0;
+  
+  if (hourMatch) {
+    totalMinutes += parseFloat(hourMatch[1]) * 60;
+  }
+  
+  if (minuteMatch) {
+    totalMinutes += parseInt(minuteMatch[1]);
+  }
+  
+  return totalMinutes;
 }
 
-export function getRelativeTimeString(date: Date): string {
+export function formatTimeAgo(date: Date | string): string {
   const now = new Date();
-  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+  const target = new Date(date);
+  const diffMs = now.getTime() - target.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
   
-  if (diffInSeconds < 60) return 'just now';
-  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`;
-  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;
-  if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)} days ago`;
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
   
-  return date.toLocaleDateString();
+  return target.toLocaleDateString();
+}
+
+export function formatDateRange(start: Date | string, end: Date | string): string {
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  
+  const startStr = startDate.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric'
+  });
+  
+  const endStr = endDate.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric'
+  });
+  
+  return `${startStr} - ${endStr}`;
+}
+
+export function getWeekNumber(date: Date): number {
+  const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
+  const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000;
+  return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+}
+
+export function getWorkingDays(start: Date, end: Date): number {
+  let count = 0;
+  const current = new Date(start);
+  
+  while (current <= end) {
+    const dayOfWeek = current.getDay();
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Not Sunday (0) or Saturday (6)
+      count++;
+    }
+    current.setDate(current.getDate() + 1);
+  }
+  
+  return count;
+}
+
+export function formatBusinessHours(totalMinutes: number): string {
+  const hours = totalMinutes / 60;
+  const businessDays = hours / 8; // Assuming 8-hour work days
+  
+  if (businessDays < 1) {
+    return formatDuration(totalMinutes);
+  }
+  
+  const days = Math.floor(businessDays);
+  const remainingHours = (businessDays - days) * 8;
+  
+  if (remainingHours < 0.5) {
+    return `${days}d`;
+  }
+  
+  return `${days}d ${formatDuration(remainingHours * 60)}`;
+}
+
+export function getTimeOfDay(): 'morning' | 'afternoon' | 'evening' | 'night' {
+  const hour = new Date().getHours();
+  
+  if (hour >= 5 && hour < 12) return 'morning';
+  if (hour >= 12 && hour < 17) return 'afternoon';
+  if (hour >= 17 && hour < 21) return 'evening';
+  return 'night';
+}
+
+export function isBusinessHours(date: Date = new Date()): boolean {
+  const hour = date.getHours();
+  const day = date.getDay();
+  
+  // Monday = 1, Friday = 5
+  const isWeekday = day >= 1 && day <= 5;
+  const isDuringBusinessHours = hour >= 9 && hour < 17;
+  
+  return isWeekday && isDuringBusinessHours;
 }

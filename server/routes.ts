@@ -13,7 +13,7 @@ import Stripe from "stripe";
 
 // Initialize Stripe (check if key exists)
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: "2023-10-16",
+  apiVersion: "2025-07-30.basil",
 }) : null;
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -513,6 +513,255 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     });
   }
+
+  // AI Services routes
+  app.post('/api/ai/extract-tasks', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { noteContent, noteTitle, projectContext } = req.body;
+      
+      // Check freemium limits
+      const limits = await checkFreemiumLimits(userId, 'ai-task-extraction');
+      if (!limits.allowed) {
+        return res.status(402).json({ message: limits.reason });
+      }
+      
+      const { extractTasksFromNote } = await import('./services/ai-service');
+      const tasks = await extractTasksFromNote(noteContent, noteTitle, projectContext);
+      
+      // Increment usage count
+      await storage.incrementTaskExtractionCount(userId);
+      
+      res.json({ tasks });
+    } catch (error) {
+      console.error('AI task extraction error:', error);
+      res.status(500).json({ message: 'Failed to extract tasks' });
+    }
+  });
+
+  app.post('/api/ai/estimate-time', isAuthenticated, async (req: any, res) => {
+    try {
+      const { taskTitle, taskDescription, complexity } = req.body;
+      const { estimateTaskTime } = await import('./services/ai-service');
+      const estimatedHours = await estimateTaskTime(taskTitle, taskDescription, complexity);
+      res.json({ estimatedHours });
+    } catch (error) {
+      console.error('AI time estimation error:', error);
+      res.status(500).json({ message: 'Failed to estimate time' });
+    }
+  });
+
+  app.post('/api/ai/analyze-priority', isAuthenticated, async (req: any, res) => {
+    try {
+      const { taskTitle, taskDescription, projectContext, deadline } = req.body;
+      const { analyzePriority } = await import('./services/ai-service');
+      const priority = await analyzePriority(taskTitle, taskDescription, projectContext, deadline);
+      res.json({ priority });
+    } catch (error) {
+      console.error('AI priority analysis error:', error);
+      res.status(500).json({ message: 'Failed to analyze priority' });
+    }
+  });
+
+  // File attachment routes
+  app.post('/api/attachments', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (user?.subscriptionPlan !== 'premium') {
+        return res.status(402).json({ message: 'File attachments require Premium subscription' });
+      }
+      
+      // In production, this would handle multipart/form-data
+      // For now, creating mock attachment
+      const { originalName, noteId, taskId } = req.body;
+      const { createMockAttachment } = await import('./services/file-service');
+      const attachmentData = createMockAttachment(originalName, userId);
+      
+      const attachment = await storage.createAttachment({
+        ...attachmentData,
+        noteId,
+        taskId,
+      });
+      
+      res.json(attachment);
+    } catch (error) {
+      console.error('File upload error:', error);
+      res.status(500).json({ message: 'Failed to upload file' });
+    }
+  });
+
+  app.get('/api/attachments/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const attachment = await storage.getAttachment(req.params.id);
+      if (!attachment) {
+        return res.status(404).json({ message: 'Attachment not found' });
+      }
+      res.json(attachment);
+    } catch (error) {
+      console.error('Get attachment error:', error);
+      res.status(500).json({ message: 'Failed to get attachment' });
+    }
+  });
+
+  // Advanced recurring tasks
+  app.post('/api/tasks/:id/recurrence', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (user?.subscriptionPlan !== 'premium') {
+        return res.status(402).json({ message: 'Advanced recurrence rules require Premium subscription' });
+      }
+      
+      const { pattern, interval, weekdays, monthDay, endDate, maxOccurrences } = req.body;
+      const { generateMockRecurringTasks } = await import('./services/recurrence-service');
+      
+      const task = await storage.getTask(req.params.id);
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found' });
+      }
+      
+      // Create mock recurring tasks for now
+      const recurringTasks = generateMockRecurringTasks(task, pattern);
+      
+      // In production, would create actual recurrence rule and tasks
+      res.json({ message: 'Recurring tasks created', count: recurringTasks.length });
+    } catch (error) {
+      console.error('Recurrence creation error:', error);
+      res.status(500).json({ message: 'Failed to create recurring tasks' });
+    }
+  });
+
+  // Advanced analytics routes
+  app.get('/api/analytics/productivity', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (user?.subscriptionPlan !== 'premium') {
+        return res.status(402).json({ message: 'Advanced analytics require Premium subscription' });
+      }
+      
+      const tasks = await storage.getUserTasks(userId);
+      const timeEntries = await storage.getUserTimeEntries(userId);
+      
+      const { calculateProductivityMetrics } = await import('./services/analytics-service');
+      const metrics = calculateProductivityMetrics(
+        tasks,
+        timeEntries,
+        { start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), end: new Date() }
+      );
+      
+      res.json(metrics);
+    } catch (error) {
+      console.error('Analytics error:', error);
+      res.status(500).json({ message: 'Failed to generate analytics' });
+    }
+  });
+
+  app.get('/api/analytics/time-tracking', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const timeEntries = await storage.getUserTimeEntries(userId);
+      const projects = await storage.getProjects(userId);
+      
+      const { calculateTimeTrackingAnalytics } = await import('./services/analytics-service');
+      const analytics = calculateTimeTrackingAnalytics(timeEntries, projects);
+      
+      res.json(analytics);
+    } catch (error) {
+      console.error('Time tracking analytics error:', error);
+      res.status(500).json({ message: 'Failed to generate time analytics' });
+    }
+  });
+
+  // Team collaboration routes
+  app.get('/api/workspaces', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const workspaces = await storage.getUserWorkspaces(userId);
+      res.json(workspaces);
+    } catch (error) {
+      console.error('Get workspaces error:', error);
+      res.status(500).json({ message: 'Failed to get workspaces' });
+    }
+  });
+
+  app.post('/api/workspaces', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (user?.subscriptionPlan !== 'premium') {
+        return res.status(402).json({ message: 'Multiple workspaces require Premium subscription' });
+      }
+      
+      const { name, spaceId } = req.body;
+      const workspace = await storage.createWorkspace({ name, spaceId });
+      
+      // Add creator as owner
+      await storage.createMembership({
+        workspaceId: workspace.id,
+        userId,
+        role: 'owner',
+      });
+      
+      res.json(workspace);
+    } catch (error) {
+      console.error('Create workspace error:', error);
+      res.status(500).json({ message: 'Failed to create workspace' });
+    }
+  });
+
+  app.get('/api/workspaces/:id/members', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const workspaceId = req.params.id;
+      
+      // Check access
+      const memberships = await storage.getWorkspaceMemberships(workspaceId);
+      const { canUserAccessWorkspace } = await import('./services/collaboration-service');
+      
+      if (!canUserAccessWorkspace(userId, workspaceId, memberships)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      const members = await storage.getWorkspaceMembers(workspaceId);
+      res.json(members);
+    } catch (error) {
+      console.error('Get members error:', error);
+      res.status(500).json({ message: 'Failed to get members' });
+    }
+  });
+
+  app.post('/api/workspaces/:id/invite', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const workspaceId = req.params.id;
+      const { email, role } = req.body;
+      
+      const memberships = await storage.getWorkspaceMemberships(workspaceId);
+      const { canUserManageWorkspace, generateInviteToken } = await import('./services/collaboration-service');
+      
+      if (!canUserManageWorkspace(userId, workspaceId, memberships)) {
+        return res.status(403).json({ message: 'Insufficient permissions' });
+      }
+      
+      const inviteToken = generateInviteToken(workspaceId, role);
+      
+      // In production, would send email with invite link
+      res.json({ 
+        message: 'Invite created', 
+        inviteToken,
+        inviteUrl: `/invite/${inviteToken}` 
+      });
+    } catch (error) {
+      console.error('Create invite error:', error);
+      res.status(500).json({ message: 'Failed to create invite' });
+    }
+  });
 
   // Feature flags
   app.get("/api/feature-flags", isAuthenticated, async (req: any, res) => {

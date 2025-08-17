@@ -116,6 +116,45 @@ export const activeTimers = pgTable("active_timers", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// File attachments table
+export const attachments = pgTable("attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  fileName: text("file_name").notNull(),
+  originalName: text("original_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  fileSize: integer("file_size").notNull(), // in bytes
+  filePath: text("file_path").notNull(), // storage path
+  uploadedBy: varchar("uploaded_by").references(() => users.id).notNull(),
+  noteId: varchar("note_id").references(() => notes.id),
+  taskId: varchar("task_id").references(() => tasks.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Recurring task rules
+export const recurrenceRules = pgTable("recurrence_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  seriesId: varchar("series_id").notNull(), // Links related recurring tasks
+  pattern: text("pattern").notNull(), // 'daily', 'weekly', 'monthly', 'custom'
+  interval: integer("interval").notNull().default(1), // Every N days/weeks/months
+  weekdays: json("weekdays").$type<number[]>().default([]), // [0-6] for weekly
+  monthDay: integer("month_day"), // Day of month for monthly
+  endDate: timestamp("end_date"),
+  maxOccurrences: integer("max_occurrences"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Subtasks for enhanced task management
+export const subtasks = pgTable("subtasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  parentTaskId: varchar("parent_task_id").references(() => tasks.id).notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default('todo'), // todo, done
+  order: integer("order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const boardColumns = pgTable("board_columns", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").references(() => projects.id).notNull(),
@@ -129,25 +168,6 @@ export const taskBoardPositions = pgTable("task_board_positions", {
   taskId: varchar("task_id").references(() => tasks.id).notNull(),
   columnId: varchar("column_id").references(() => boardColumns.id).notNull(),
   order: integer("order").notNull(),
-});
-
-export const subtasks = pgTable("subtasks", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  taskId: varchar("task_id").references(() => tasks.id).notNull(),
-  title: text("title").notNull(),
-  done: boolean("done").notNull().default(false),
-  order: integer("order").notNull().default(0),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export const recurrenceRules = pgTable("recurrence_rules", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  taskId: varchar("task_id").references(() => tasks.id).notNull(),
-  rruleText: text("rrule_text").notNull(),
-  timezone: text("timezone").notNull().default('UTC'),
-  nextOccurrenceAt: timestamp("next_occurrence_at"),
-  seriesId: varchar("series_id"), // To link related recurring tasks
-  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const featureFlags = pgTable("feature_flags", {
@@ -255,6 +275,11 @@ export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
   createdAt: true,
 });
 
+export const insertAttachmentSchema = createInsertSchema(attachments).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -302,6 +327,9 @@ export type InsertActiveTimer = z.infer<typeof insertActiveTimerSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 
+export type Attachment = typeof attachments.$inferSelect;
+export type InsertAttachment = z.infer<typeof insertAttachmentSchema>;
+
 // Extended types with relations
 export type ProjectWithStats = Project & {
   taskCount: number;
@@ -331,9 +359,10 @@ export type AITaskSuggestion = {
   title: string;
   description?: string;
   priority: 'low' | 'medium' | 'high' | 'urgent';
-  dueDate?: Date;
+  dueDate?: string | null;
   assigneeId?: string;
   tags?: string[];
+  estimatedHours?: number;
 };
 
 export type SpaceContext = {
