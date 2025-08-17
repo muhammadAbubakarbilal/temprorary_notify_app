@@ -1,0 +1,126 @@
+🔑 Free Plan (Personal Use – Freemium)
+
+👉 Goal: Give enough utility for individuals to stay, but lock the advanced productivity & pro features to encourage upgrades.
+
+Included (Free):
+
+✅ AI Note-taking (basic NLP task extraction, up to X tasks/day).
+
+✅ Personal Task Board (single workspace only).
+
+✅ Simple Time Tracking (start/stop timer on tasks, daily total only).
+
+✅ Recurring Tasks (limited: only daily recurrences).
+
+✅ Personal vs Professional Mode Toggle (but professional mode disabled until upgrade).
+
+✅ Cross-device sync (1 device only).
+
+✅ Export Notes (basic text export only).
+
+✅ Basic AI Suggestions ("You wrote: meeting tomorrow → create task?").
+
+Locked (Show as Premium Teasers with 🔒 icons):
+
+🔒 Multiple Workspaces (e.g., personal + professional boards).
+
+🔒 Unlimited Devices Sync.
+
+🔒 Advanced Recurrence (weekly/monthly/custom rules).
+
+🔒 Advanced Time Reports (charts, productivity analytics).
+
+🔒 Priority-based Task Auto-Sorting by AI.
+
+🔒 Attachments in Notes/Tasks (files, PDFs, screenshots).
+
+🔒 Collaboration/Team Boards.
+
+🔒 Manager/Authority View (professional setting).
+
+🔒 End-to-end Encrypted “Second Brain” vault.
+
+💎 Premium Plan (Professional / Teams)
+
+👉 Goal: Unlock project management, collaboration, pro AI, analytics.
+
+Everything in Free, PLUS:
+
+🚀 Unlimited Workspaces (personal + multiple projects/teams).
+
+🚀 Advanced AI Task Extraction (summarize, restructure, tag priorities).
+
+🚀 AI Time Estimation (“This task usually takes you 45 mins”).
+
+🚀 Custom Recurrence Rules (daily/weekly/monthly/intervals).
+
+🚀 Professional Mode Access:
+
+Manager access to team boards.
+
+Role-based permissions (authority can view/assign).
+
+Notes/tasks sharing across org.
+
+🚀 Team Collaboration (assign tasks, track statuses, chat on tasks).
+
+🚀 Unlimited Device Sync.
+
+🚀 Data Security Features:
+
+End-to-end encryption for personal workspace.
+
+Admin control for team workspace.
+
+🚀 Advanced Reports & Analytics:
+
+Time tracking dashboards.
+
+Task completion velocity reports.
+
+Burn-down charts for teams.
+
+🚀 Attachments in Notes/Tasks.
+
+🚀 Priority Customer Support.
+
+🎛 Feature Gating (UX Flow)
+
+While using Free plan, show Premium-only features with a lock 🔒 overlay.
+Example:
+
+User tries to create a weekly recurring task → modal pops:
+“Custom recurrence is available in Premium. Upgrade to unlock.”
+
+User tries to create a second workspace →
+“Multiple workspaces are Premium-only. Keep personal free, go Premium for professional.”
+
+🔐 Signup / Onboarding Flow
+
+Sign up → Choose Mode
+
+Default: Personal Mode (Free).
+
+Optional: “I want to use for work/team” → goes Premium Trial.
+
+Workspace Creation
+
+Free users: One workspace only.
+
+Premium users: Multiple workspace option visible.
+
+Feature Preview
+
+During onboarding, locked features are shown but greyed-out (with “Go Premium” badge).
+
+💡 Monetization Strategy
+
+Free → Premium upgrade triggers:
+
+Task limits (“You’ve reached your free task extraction limit today. Upgrade for unlimited AI assistance.”).
+
+Recurrence limits.
+
+Multi-device restriction.
+
+Collaboration locked.
