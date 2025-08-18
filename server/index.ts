@@ -1,8 +1,27 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { setupAuth } from "./googleAuth";
 
 const app = express();
+
+// Session middleware (simple in-memory sessions for development)
+const sessions = new Map();
+app.use((req: any, res, next) => {
+  const sessionId = req.headers['session-id'] || Math.random().toString(36);
+  req.session = sessions.get(sessionId) || {};
+  res.setHeader('session-id', sessionId);
+  
+  // Save session on response end
+  const originalEnd = res.end;
+  res.end = function(...args: any[]) {
+    sessions.set(sessionId, req.session);
+    originalEnd.apply(res, args);
+  };
+  
+  next();
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
@@ -37,6 +56,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Setup manual authentication FIRST
+  await setupAuth(app);
+  
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

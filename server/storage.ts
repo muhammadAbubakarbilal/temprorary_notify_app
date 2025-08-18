@@ -1,20 +1,4 @@
 import {
-  users,
-  spaces,
-  workspaces,
-  memberships,
-  projects,
-  notes,
-  tasks,
-  subtasks,
-  timeEntries,
-  activeTimers,
-  boardColumns,
-  taskBoardPositions,
-  recurrenceRules,
-  featureFlags,
-  auditLogs,
-  attachments,
   type User,
   type UpsertUser,
   type InsertUser,
@@ -54,17 +38,26 @@ import {
   type TaskWithSubtasks,
   type NoteWithTaskCount
 } from "@shared/schema";
-import { db } from "./db";
-import { eq, and, desc, asc, sql, count, isNull } from "drizzle-orm";
+import { nanoid } from "nanoid";
+import crypto from "crypto";
 
 // Interface for storage operations
 export interface IStorage {
   // User operations (mandatory for Replit Auth)
   getUser(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
+  createUser(userData: any): Promise<User>;
   updateUserSubscription(id: string, plan: string, status: string, customerId?: string, subscriptionId?: string): Promise<User | undefined>;
   resetDailyTaskExtractionCount(userId: string): Promise<void>;
   incrementTaskExtractionCount(userId: string): Promise<number>;
+  getUserByEmail(email: string): Promise<User | null>;
+  createUserWithPassword(userData: {
+    email: string;
+    password: string;
+    firstName: string;
+    lastName: string;
+    profileImageUrl: string | null;
+  }): Promise<User>;
 
   // Projects
   getProjects(userId?: string): Promise<ProjectWithStats[]>;
@@ -133,529 +126,737 @@ export interface IStorage {
   updateMembershipRole(workspaceId: string, userId: string, role: string): Promise<void>;
 }
 
-export class DatabaseStorage implements IStorage {
-  // User operations (mandatory for Replit Auth)
+// In-memory storage implementation for Replit environment
+export class MemStorage implements IStorage {
+  private users: Map<string, User> = new Map();
+  private spaces: Map<string, Space> = new Map();
+  private workspaces: Map<string, Workspace> = new Map();
+  private memberships: Map<string, Membership> = new Map();
+  private projects: Map<string, Project> = new Map();
+  private notes: Map<string, Note> = new Map();
+  private tasks: Map<string, Task> = new Map();
+  private subtasks: Map<string, Subtask> = new Map();
+  private timeEntries: Map<string, TimeEntry> = new Map();
+  private activeTimers: Map<string, ActiveTimer> = new Map();
+  private boardColumns: Map<string, BoardColumn> = new Map();
+  private taskBoardPositions: Map<string, TaskBoardPosition> = new Map();
+  private recurrenceRules: Map<string, RecurrenceRule> = new Map();
+  private featureFlags: Map<string, FeatureFlag> = new Map();
+  private auditLogs: Map<string, AuditLog> = new Map();
+  private attachments: Map<string, Attachment> = new Map();
+
+  constructor() {
+    this.seedData();
+  }
+
+  private seedData() {
+    // Create default user
+    const defaultUserId = "default-user";
+    const defaultUser: User = {
+      id: defaultUserId,
+      email: "demo@example.com",
+      firstName: "Demo",
+      lastName: "User",
+      profileImageUrl: null,
+      subscriptionPlan: "premium",
+      subscriptionStatus: "active",
+      stripeCustomerId: null,
+      stripeSubscriptionId: null,
+      personalKeyRef: null,
+      dailyTaskExtractionCount: 0,
+      lastTaskExtractionReset: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.users.set(defaultUserId, defaultUser);
+
+    // Create default space
+    const defaultSpaceId = nanoid();
+    const defaultSpace: Space = {
+      id: defaultSpaceId,
+      type: "personal",
+      createdAt: new Date(),
+    };
+    this.spaces.set(defaultSpaceId, defaultSpace);
+
+    // Create default workspace
+    const defaultWorkspaceId = nanoid();
+    const defaultWorkspace: Workspace = {
+      id: defaultWorkspaceId,
+      spaceId: defaultSpaceId,
+      name: "Personal Workspace",
+      policyManagerNoteAccess: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.workspaces.set(defaultWorkspaceId, defaultWorkspace);
+
+    // Create default membership
+    const defaultMembershipId = nanoid();
+    const defaultMembership: Membership = {
+      id: defaultMembershipId,
+      workspaceId: defaultWorkspaceId,
+      userId: defaultUserId,
+      role: "owner",
+      createdAt: new Date(),
+    };
+    this.memberships.set(defaultMembershipId, defaultMembership);
+
+    // Create sample project
+    const sampleProjectId = nanoid();
+    const sampleProject: Project = {
+      id: sampleProjectId,
+      name: "Welcome Project",
+      description: "Your first project to get started",
+      color: "#6366F1",
+      spaceId: defaultSpaceId,
+      workspaceId: defaultWorkspaceId,
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.projects.set(sampleProjectId, sampleProject);
+
+    // Create sample note
+    const sampleNoteId = nanoid();
+    const sampleNote: Note = {
+      id: sampleNoteId,
+      spaceId: defaultSpaceId,
+      workspaceId: defaultWorkspaceId,
+      projectId: sampleProjectId,
+      authorId: defaultUserId,
+      title: "Welcome Note",
+      content: "Welcome to your AI-powered productivity platform! Start by creating tasks and notes.",
+      tags: [],
+      backlinks: [],
+      visibilityScope: "private",
+      lastProcessedLength: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.notes.set(sampleNoteId, sampleNote);
+
+    // Create sample task
+    const sampleTaskId = nanoid();
+    const sampleTask: Task = {
+      id: sampleTaskId,
+      projectId: sampleProjectId,
+      noteId: sampleNoteId,
+      title: "Get started with your productivity platform",
+      description: "Explore the features and create your first real project",
+      status: "todo",
+      priority: "medium",
+      assigneeId: defaultUserId,
+      dueDate: null,
+      tags: ["onboarding"],
+      seriesId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.tasks.set(sampleTaskId, sampleTask);
+  }
+
+  // User operations
   async getUser(id: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user;
+    return this.users.get(id);
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
-    const [user] = await db
-      .insert(users)
-      .values(userData)
-      .onConflictDoUpdate({
-        target: users.id,
-        set: {
-          ...userData,
-          updatedAt: new Date(),
-        },
-      })
-      .returning();
+    const existingUser = this.users.get(userData.id!);
+    const user: User = {
+      ...existingUser,
+      ...userData,
+      id: userData.id!,
+      updatedAt: new Date(),
+    } as User;
+
+    if (!existingUser) {
+      user.createdAt = new Date();
+    }
+
+    this.users.set(userData.id!, user);
     return user;
   }
 
   async updateUserSubscription(id: string, plan: string, status: string, customerId?: string, subscriptionId?: string): Promise<User | undefined> {
-    const [user] = await db
-      .update(users)
-      .set({
-        subscriptionPlan: plan,
-        subscriptionStatus: status,
-        stripeCustomerId: customerId,
-        stripeSubscriptionId: subscriptionId,
-        updatedAt: new Date()
-      })
-      .where(eq(users.id, id))
-      .returning();
-    return user;
+    const user = this.users.get(id);
+    if (!user) return undefined;
+
+    const updatedUser: User = {
+      ...user,
+      subscriptionPlan: plan,
+      subscriptionStatus: status,
+      stripeCustomerId: customerId || user.stripeCustomerId,
+      stripeSubscriptionId: subscriptionId || user.stripeSubscriptionId,
+      updatedAt: new Date(),
+    };
+
+    this.users.set(id, updatedUser);
+    return updatedUser;
   }
 
   async resetDailyTaskExtractionCount(userId: string): Promise<void> {
-    await db
-      .update(users)
-      .set({
-        dailyTaskExtractionCount: 0,
-        lastTaskExtractionReset: new Date()
-      })
-      .where(eq(users.id, userId));
+    const user = this.users.get(userId);
+    if (user) {
+      user.dailyTaskExtractionCount = 0;
+      user.lastTaskExtractionReset = new Date();
+      this.users.set(userId, user);
+    }
   }
 
   async incrementTaskExtractionCount(userId: string): Promise<number> {
-    const [user] = await db
-      .update(users)
-      .set({
-        dailyTaskExtractionCount: sql`${users.dailyTaskExtractionCount} + 1`
-      })
-      .where(eq(users.id, userId))
-      .returning({ count: users.dailyTaskExtractionCount });
-    return user.count;
+    const user = this.users.get(userId);
+    if (user) {
+      user.dailyTaskExtractionCount++;
+      this.users.set(userId, user);
+      return user.dailyTaskExtractionCount;
+    }
+    return 0;
+  }
+
+  async getUserByEmail(email: string): Promise<User | null> {
+    const user = Array.from(this.users.values()).find(u => u.email === email);
+    return user || null;
+  }
+
+  async createUser(userData: any): Promise<User> {
+    const userId = userData.id || `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    const user: User = {
+      id: userId,
+      email: userData.email,
+      firstName: userData.firstName || '',
+      lastName: userData.lastName || '',
+      profileImageUrl: userData.profileImageUrl || null,
+      subscriptionPlan: userData.subscriptionPlan || 'free',
+      subscriptionStatus: userData.subscriptionStatus || 'active',
+      stripeCustomerId: userData.stripeCustomerId || null,
+      stripeSubscriptionId: userData.stripeSubscriptionId || null,
+      personalKeyRef: null,
+      dailyTaskExtractionCount: userData.dailyTaskExtractionCount || 0,
+      lastTaskExtractionReset: userData.lastTaskExtractionReset || new Date(),
+      password: userData.password,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    this.users.set(userId, user);
+    return user;
+  }
+
+  async createUserWithPassword(userData: {
+    email: string;
+    password: string;
+    firstName: string;
+    lastName: string;
+    profileImageUrl: string | null;
+  }): Promise<User> {
+    const userId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    const user: User = {
+      id: userId,
+      email: userData.email,
+      firstName: userData.firstName,
+      lastName: userData.lastName,
+      profileImageUrl: userData.profileImageUrl,
+      subscriptionPlan: 'free',
+      subscriptionStatus: 'active',
+      stripeCustomerId: null,
+      stripeSubscriptionId: null,
+      personalKeyRef: null,
+      dailyTaskExtractionCount: 0,
+      lastTaskExtractionReset: new Date(),
+      password: userData.password,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    this.users.set(userId, user);
+    return user;
   }
 
   // Projects
   async getProjects(userId?: string): Promise<ProjectWithStats[]> {
-    const projectsWithStats = await db
-      .select({
-        id: projects.id,
-        name: projects.name,
-        description: projects.description,
-        color: projects.color,
-        spaceId: projects.spaceId,
-        workspaceId: projects.workspaceId,
-        status: projects.status,
-        createdAt: projects.createdAt,
-        updatedAt: projects.updatedAt,
-        taskCount: sql<number>`cast(count(distinct ${tasks.id}) as int)`,
-        noteCount: sql<number>`cast(count(distinct ${notes.id}) as int)`,
-      })
-      .from(projects)
-      .leftJoin(tasks, eq(projects.id, tasks.projectId))
-      .leftJoin(notes, eq(projects.id, notes.projectId))
-      .where(eq(projects.status, 'active'))
-      .groupBy(projects.id)
-      .orderBy(desc(projects.updatedAt));
+    const projectsArray = Array.from(this.projects.values())
+      .filter(p => p.status === 'active')
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
 
-    return projectsWithStats;
+    return projectsArray.map(project => ({
+      ...project,
+      taskCount: Array.from(this.tasks.values()).filter(t => t.projectId === project.id).length,
+      noteCount: Array.from(this.notes.values()).filter(n => n.projectId === project.id).length,
+    }));
   }
 
   async getProject(id: string): Promise<Project | undefined> {
-    const [project] = await db.select().from(projects).where(eq(projects.id, id));
-    return project;
+    return this.projects.get(id);
   }
 
   async createProject(project: InsertProject): Promise<Project> {
-    const [newProject] = await db.insert(projects).values(project).returning();
+    const newProject: Project = {
+      id: nanoid(),
+      name: project.name,
+      description: project.description || null,
+      color: project.color || '#6366F1',
+      spaceId: project.spaceId || null,
+      workspaceId: project.workspaceId || null,
+      status: project.status || 'active',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.projects.set(newProject.id, newProject);
     return newProject;
   }
 
   async updateProject(id: string, project: Partial<InsertProject>): Promise<Project | undefined> {
-    const [updatedProject] = await db
-      .update(projects)
-      .set({ ...project, updatedAt: new Date() })
-      .where(eq(projects.id, id))
-      .returning();
+    const existingProject = this.projects.get(id);
+    if (!existingProject) return undefined;
+
+    const updatedProject: Project = {
+      ...existingProject,
+      ...project,
+      updatedAt: new Date(),
+    };
+    this.projects.set(id, updatedProject);
     return updatedProject;
   }
 
   async deleteProject(id: string): Promise<boolean> {
-    const result = await db.delete(projects).where(eq(projects.id, id));
-    return (result.rowCount ?? 0) > 0;
+    return this.projects.delete(id);
   }
 
   // Notes
   async getNotesByProject(projectId: string): Promise<NoteWithTaskCount[]> {
-    const notesWithTaskCount = await db
-      .select({
-        id: notes.id,
-        spaceId: notes.spaceId,
-        workspaceId: notes.workspaceId,
-        projectId: notes.projectId,
-        authorId: notes.authorId,
-        title: notes.title,
-        content: notes.content,
-        tags: notes.tags,
-        backlinks: notes.backlinks,
-        visibilityScope: notes.visibilityScope,
-        lastProcessedLength: notes.lastProcessedLength,
-        createdAt: notes.createdAt,
-        updatedAt: notes.updatedAt,
-        tasksExtracted: sql<number>`cast(count(${tasks.id}) as int)`,
-      })
-      .from(notes)
-      .leftJoin(tasks, eq(notes.id, tasks.noteId))
-      .where(eq(notes.projectId, projectId))
-      .groupBy(notes.id)
-      .orderBy(desc(notes.updatedAt));
+    const notesArray = Array.from(this.notes.values())
+      .filter(n => n.projectId === projectId)
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
 
-    return notesWithTaskCount;
+    return notesArray.map(note => ({
+      ...note,
+      tasksExtracted: Array.from(this.tasks.values()).filter(t => t.noteId === note.id).length,
+    }));
   }
 
   async getNote(id: string): Promise<Note | undefined> {
-    const [note] = await db.select().from(notes).where(eq(notes.id, id));
-    return note;
+    return this.notes.get(id);
   }
 
   async createNote(note: InsertNote): Promise<Note> {
-    const [newNote] = await db.insert(notes).values([note]).returning();
+    const newNote: Note = {
+      id: nanoid(),
+      spaceId: note.spaceId || null,
+      workspaceId: note.workspaceId || null,
+      projectId: note.projectId || null,
+      authorId: note.authorId || null,
+      title: note.title,
+      content: note.content || '',
+      tags: note.tags || [],
+      backlinks: note.backlinks || [],
+      visibilityScope: note.visibilityScope || 'private',
+      lastProcessedLength: note.lastProcessedLength || 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.notes.set(newNote.id, newNote);
     return newNote;
   }
 
   async updateNote(id: string, note: Partial<InsertNote>): Promise<Note | undefined> {
-    const updateData = { ...note, updatedAt: new Date() };
-    const [updatedNote] = await db
-      .update(notes)
-      .set(updateData)
-      .where(eq(notes.id, id))
-      .returning();
+    const existingNote = this.notes.get(id);
+    if (!existingNote) return undefined;
+
+    const updatedNote: Note = {
+      ...existingNote,
+      ...note,
+      updatedAt: new Date(),
+    };
+    this.notes.set(id, updatedNote);
     return updatedNote;
   }
 
   async deleteNote(id: string): Promise<boolean> {
-    const result = await db.delete(notes).where(eq(notes.id, id));
-    return (result.rowCount ?? 0) > 0;
+    return this.notes.delete(id);
   }
 
   // Tasks
   async getTasksByProject(projectId: string): Promise<TaskWithTimeTracking[]> {
-    const tasksWithTime = await db
-      .select({
-        id: tasks.id,
-        projectId: tasks.projectId,
-        noteId: tasks.noteId,
-        title: tasks.title,
-        description: tasks.description,
-        status: tasks.status,
-        priority: tasks.priority,
-        assigneeId: tasks.assigneeId,
-        dueDate: tasks.dueDate,
-        tags: tasks.tags,
-        seriesId: tasks.seriesId,
-        createdAt: tasks.createdAt,
-        updatedAt: tasks.updatedAt,
-        totalTime: sql<number>`cast(coalesce(sum(${timeEntries.duration}), 0) as int)`,
-        isActive: sql<boolean>`case when ${activeTimers.id} is not null then true else false end`,
-      })
-      .from(tasks)
-      .leftJoin(timeEntries, eq(tasks.id, timeEntries.taskId))
-      .leftJoin(activeTimers, eq(tasks.id, activeTimers.taskId))
-      .where(eq(tasks.projectId, projectId))
-      .groupBy(tasks.id, activeTimers.id)
-      .orderBy(desc(tasks.updatedAt));
+    const tasksArray = Array.from(this.tasks.values())
+      .filter(t => t.projectId === projectId)
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
 
-    return tasksWithTime;
+    return tasksArray.map(task => {
+      const totalTime = Array.from(this.timeEntries.values())
+        .filter(te => te.taskId === task.id)
+        .reduce((sum, te) => sum + te.duration, 0);
+
+      const isActive = Array.from(this.activeTimers.values())
+        .some(at => at.taskId === task.id);
+
+      return {
+        ...task,
+        totalTime,
+        isActive,
+      };
+    });
   }
 
   async getTask(id: string): Promise<Task | undefined> {
-    const [task] = await db.select().from(tasks).where(eq(tasks.id, id));
-    return task;
+    return this.tasks.get(id);
   }
 
   async createTask(task: InsertTask): Promise<Task> {
-    const [newTask] = await db.insert(tasks).values([task]).returning();
+    const newTask: Task = {
+      id: nanoid(),
+      projectId: task.projectId,
+      noteId: task.noteId || null,
+      title: task.title,
+      description: task.description || null,
+      status: task.status || 'todo',
+      priority: task.priority || 'medium',
+      assigneeId: task.assigneeId || null,
+      dueDate: task.dueDate || null,
+      tags: task.tags || [],
+      seriesId: task.seriesId || null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.tasks.set(newTask.id, newTask);
     return newTask;
   }
 
   async updateTask(id: string, task: Partial<InsertTask>): Promise<Task | undefined> {
-    const updateData = { ...task, updatedAt: new Date() };
-    const [updatedTask] = await db
-      .update(tasks)
-      .set(updateData)
-      .where(eq(tasks.id, id))
-      .returning();
+    const existingTask = this.tasks.get(id);
+    if (!existingTask) return undefined;
+
+    const updatedTask: Task = {
+      ...existingTask,
+      projectId: task.projectId || existingTask.projectId,
+      noteId: task.noteId !== undefined ? task.noteId || null : existingTask.noteId,
+      title: task.title || existingTask.title,
+      description: task.description !== undefined ? task.description || null : existingTask.description,
+      status: task.status || existingTask.status,
+      priority: task.priority || existingTask.priority,
+      assigneeId: task.assigneeId !== undefined ? task.assigneeId || null : existingTask.assigneeId,
+      dueDate: task.dueDate !== undefined ? task.dueDate || null : existingTask.dueDate,
+      tags: task.tags !== undefined ? task.tags || [] : existingTask.tags,
+      seriesId: task.seriesId !== undefined ? task.seriesId || null : existingTask.seriesId,
+      updatedAt: new Date(),
+    };
+    this.tasks.set(id, updatedTask);
     return updatedTask;
   }
 
   async deleteTask(id: string): Promise<boolean> {
-    const result = await db.delete(tasks).where(eq(tasks.id, id));
-    return (result.rowCount ?? 0) > 0;
+    return this.tasks.delete(id);
   }
 
   // Time Entries
   async getTimeEntriesByTask(taskId: string): Promise<TimeEntry[]> {
-    return await db
-      .select()
-      .from(timeEntries)
-      .where(eq(timeEntries.taskId, taskId))
-      .orderBy(desc(timeEntries.startTime));
+    return Array.from(this.timeEntries.values())
+      .filter(te => te.taskId === taskId)
+      .sort((a, b) => b.startTime.getTime() - a.startTime.getTime());
   }
 
   async createTimeEntry(entry: InsertTimeEntry): Promise<TimeEntry> {
-    const [newEntry] = await db.insert(timeEntries).values(entry).returning();
+    const newEntry: TimeEntry = {
+      id: nanoid(),
+      taskId: entry.taskId,
+      startTime: entry.startTime,
+      endTime: entry.endTime || null,
+      duration: entry.duration || 0,
+      description: entry.description || null,
+      createdAt: new Date(),
+    };
+    this.timeEntries.set(newEntry.id, newEntry);
     return newEntry;
   }
 
   async updateTimeEntry(id: string, entry: Partial<InsertTimeEntry>): Promise<TimeEntry | undefined> {
-    const [updatedEntry] = await db
-      .update(timeEntries)
-      .set(entry)
-      .where(eq(timeEntries.id, id))
-      .returning();
+    const existingEntry = this.timeEntries.get(id);
+    if (!existingEntry) return undefined;
+
+    const updatedEntry: TimeEntry = {
+      ...existingEntry,
+      ...entry,
+    };
+    this.timeEntries.set(id, updatedEntry);
     return updatedEntry;
   }
 
   // Active Timers
   async getActiveTimer(userId?: string): Promise<ActiveTimer | undefined> {
-    const [timer] = await db.select().from(activeTimers).limit(1);
-    return timer;
+    return Array.from(this.activeTimers.values())[0];
   }
 
   async startTimer(timer: InsertActiveTimer): Promise<ActiveTimer> {
     // Stop any existing active timers first
     await this.stopTimer();
 
-    const [newTimer] = await db.insert(activeTimers).values(timer).returning();
+    const newTimer: ActiveTimer = {
+      id: nanoid(),
+      ...timer,
+      createdAt: new Date(),
+    };
+    this.activeTimers.set(newTimer.id, newTimer);
     return newTimer;
   }
 
   async stopTimer(userId?: string): Promise<TimeEntry | undefined> {
-    const [activeTimer] = await db.select().from(activeTimers).limit(1);
+    const activeTimerArray = Array.from(this.activeTimers.values());
+    if (activeTimerArray.length === 0) return undefined;
 
-    if (!activeTimer) {
-      return undefined;
-    }
+    const activeTimer = activeTimerArray[0];
+    this.activeTimers.delete(activeTimer.id);
 
-    // Delete the active timer
-    await db.delete(activeTimers).where(eq(activeTimers.id, activeTimer.id));
-
-    // Create time entry
     const endTime = new Date();
     const duration = Math.floor((endTime.getTime() - activeTimer.startTime.getTime()) / 1000);
 
-    const [timeEntry] = await db.insert(timeEntries).values({
+    const timeEntry = await this.createTimeEntry({
       taskId: activeTimer.taskId,
       startTime: activeTimer.startTime,
       endTime,
       duration,
-    }).returning();
+    });
 
     return timeEntry;
   }
 
   // Feature Flags
   async getUserFeatureFlags(userId: string): Promise<Record<string, boolean>> {
-    const flags = await db
-      .select()
-      .from(featureFlags)
-      .where(
-        and(
-          eq(featureFlags.scopeType, 'user'),
-          eq(featureFlags.scopeId, userId)
-        )
-      );
+    const flags = Array.from(this.featureFlags.values())
+      .filter(flag => flag.scopeType === 'user' && flag.scopeId === userId);
 
-    return flags.reduce((acc, flag) => {
+    return flags.reduce((acc: Record<string, boolean>, flag: FeatureFlag) => {
       acc[flag.key] = flag.value;
       return acc;
-    }, {} as Record<string, boolean>);
+    }, {});
   }
 
   async setFeatureFlag(scopeType: string, scopeId: string, key: string, value: boolean): Promise<FeatureFlag> {
-    const [flag] = await db
-      .insert(featureFlags)
-      .values({ scopeType, scopeId, key, value })
-      .onConflictDoUpdate({
-        target: [featureFlags.scopeType, featureFlags.scopeId, featureFlags.key],
-        set: { value, updatedAt: new Date() },
-      })
-      .returning();
-    return flag;
+    const existingFlag = Array.from(this.featureFlags.values())
+      .find(f => f.scopeType === scopeType && f.scopeId === scopeId && f.key === key);
+
+    if (existingFlag) {
+      existingFlag.value = value;
+      existingFlag.updatedAt = new Date();
+      this.featureFlags.set(existingFlag.id, existingFlag);
+      return existingFlag;
+    }
+
+    const newFlag: FeatureFlag = {
+      id: nanoid(),
+      scopeType,
+      scopeId,
+      key,
+      value,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.featureFlags.set(newFlag.id, newFlag);
+    return newFlag;
   }
 
   // Spaces and Workspaces
   async getUserSpaces(userId: string): Promise<Space[]> {
-    const result = await db
-      .select({
-        id: spaces.id,
-        type: spaces.type,
-        createdAt: spaces.createdAt
-      })
-      .from(spaces)
-      .innerJoin(workspaces, eq(spaces.id, workspaces.spaceId))
-      .innerJoin(memberships, eq(workspaces.id, memberships.workspaceId))
-      .where(eq(memberships.userId, userId));
-    return result;
+    const userMemberships = Array.from(this.memberships.values())
+      .filter(m => m.userId === userId);
+
+    const userWorkspaceIds = userMemberships.map(m => m.workspaceId);
+    const userWorkspaces = Array.from(this.workspaces.values())
+      .filter(w => userWorkspaceIds.includes(w.id));
+
+    const spaceIds = userWorkspaces.map(w => w.spaceId);
+    return Array.from(this.spaces.values())
+      .filter(s => spaceIds.includes(s.id));
   }
 
   async createPersonalSpace(userId: string): Promise<Space> {
-    const [space] = await db.insert(spaces).values({
-      type: 'personal'
-    }).returning();
+    const space: Space = {
+      id: nanoid(),
+      type: 'personal',
+      createdAt: new Date(),
+    };
+    this.spaces.set(space.id, space);
 
-    // Create default personal workspace
-    const [workspace] = await db.insert(workspaces).values({
+    const workspace: Workspace = {
+      id: nanoid(),
       spaceId: space.id,
       name: 'Personal',
-      policyManagerNoteAccess: false
-    }).returning();
+      policyManagerNoteAccess: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.workspaces.set(workspace.id, workspace);
 
-    // Create membership
-    await db.insert(memberships).values({
+    const membership: Membership = {
+      id: nanoid(),
       workspaceId: workspace.id,
       userId,
-      role: 'owner'
-    });
+      role: 'owner',
+      createdAt: new Date(),
+    };
+    this.memberships.set(membership.id, membership);
 
     return space;
   }
 
   async getUserWorkspaces(userId: string): Promise<Workspace[]> {
-    const result = await db
-      .select({
-        id: workspaces.id,
-        name: workspaces.name,
-        createdAt: workspaces.createdAt,
-        updatedAt: workspaces.updatedAt,
-        spaceId: workspaces.spaceId,
-        policyManagerNoteAccess: workspaces.policyManagerNoteAccess
-      })
-      .from(workspaces)
-      .innerJoin(memberships, eq(workspaces.id, memberships.workspaceId))
-      .where(eq(memberships.userId, userId));
-    return result;
+    const userMemberships = Array.from(this.memberships.values())
+      .filter(m => m.userId === userId);
+
+    const workspaceIds = userMemberships.map(m => m.workspaceId);
+    return Array.from(this.workspaces.values())
+      .filter(w => workspaceIds.includes(w.id));
   }
 
   async getWorkspacesBySpace(spaceId: string): Promise<Workspace[]> {
-    return await db
-      .select()
-      .from(workspaces)
-      .where(eq(workspaces.spaceId, spaceId));
+    return Array.from(this.workspaces.values())
+      .filter(w => w.spaceId === spaceId);
   }
 
   // Reports and Time Tracking
   async getTimeEntriesByUser(userId: string): Promise<TimeEntry[]> {
-    // This is a placeholder. A real implementation would fetch time entries associated with tasks belonging to the user.
-    // For now, returning an empty array.
-    return [];
+    return Array.from(this.timeEntries.values());
   }
 
   async getTasksByUser(userId: string): Promise<Task[]> {
-    // This is a placeholder. A real implementation would fetch tasks assigned to the user.
-    // For now, returning an empty array.
-    return [];
+    return Array.from(this.tasks.values())
+      .filter(t => t.assigneeId === userId);
   }
 
   async getTimeTrackingStats(userId: string): Promise<{ totalHours: number; weeklyHours: number; averagePerDay: number }> {
-    // Placeholder for time tracking statistics
+    const entries = await this.getTimeEntriesByUser(userId);
+    const totalSeconds = entries.reduce((sum, entry) => sum + entry.duration, 0);
+    const totalHours = totalSeconds / 3600;
+
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+    const weeklyEntries = entries.filter(entry => entry.startTime >= oneWeekAgo);
+    const weeklySeconds = weeklyEntries.reduce((sum, entry) => sum + entry.duration, 0);
+    const weeklyHours = weeklySeconds / 3600;
+
+    const averagePerDay = weeklyHours / 7;
+
     return {
-      totalHours: 0,
-      weeklyHours: 0,
-      averagePerDay: 0
+      totalHours,
+      weeklyHours,
+      averagePerDay,
     };
   }
 
   async getProductivityStats(userId: string): Promise<{ completionRate: number; averageTasksPerDay: number; streak: number }> {
-    // Placeholder for productivity statistics
+    const tasks = await this.getTasksByUser(userId);
+    const completedTasks = tasks.filter(t => t.status === 'done');
+    const completionRate = tasks.length > 0 ? (completedTasks.length / tasks.length) * 100 : 0;
+
+    // Simple calculation for demo purposes
+    const averageTasksPerDay = tasks.length / 7; // Assuming 7 days
+    const streak = 5; // Mock streak
+
     return {
-      completionRate: 0,
-      averageTasksPerDay: 0,
-      streak: 0
+      completionRate,
+      averageTasksPerDay,
+      streak,
     };
   }
 
   // Attachments (Premium)
   async createAttachment(attachment: InsertAttachment): Promise<Attachment> {
-    const [result] = await db.insert(attachments).values(attachment).returning();
-    return result;
+    const newAttachment: Attachment = {
+      id: nanoid(),
+      fileName: attachment.fileName,
+      originalName: attachment.originalName,
+      mimeType: attachment.mimeType,
+      fileSize: attachment.fileSize,
+      filePath: attachment.filePath,
+      uploadedBy: attachment.uploadedBy,
+      noteId: attachment.noteId || null,
+      taskId: attachment.taskId || null,
+      createdAt: new Date(),
+    };
+    this.attachments.set(newAttachment.id, newAttachment);
+    return newAttachment;
   }
 
   async getAttachment(id: string): Promise<Attachment | undefined> {
-    const [attachment] = await db.select().from(attachments).where(eq(attachments.id, id));
-    return attachment;
+    return this.attachments.get(id);
   }
 
   async getAttachmentsByNote(noteId: string): Promise<Attachment[]> {
-    return await db.select().from(attachments).where(eq(attachments.noteId, noteId));
+    return Array.from(this.attachments.values())
+      .filter(a => a.noteId === noteId);
   }
 
-  async getAttachmentsByTask(taskId: string): Promise<Attachment[]> {
-    return await db.select().from(attachments).where(eq(attachments.taskId, taskId));
+  async getAttachmentsByTask(taskId: string): Promise<Attachment[]>{
+    return Array.from(this.attachments.values())
+      .filter(a => a.taskId === taskId);
   }
 
   async deleteAttachment(id: string): Promise<boolean> {
-    const result = await db.delete(attachments).where(eq(attachments.id, id));
-    return (result.rowCount ?? 0) > 0;
+    return this.attachments.delete(id);
   }
 
   // Enhanced Analytics (Premium)
   async getUserTasks(userId: string): Promise<Task[]> {
-    const result = await db
-      .select({
-        id: tasks.id,
-        status: tasks.status,
-        title: tasks.title,
-        projectId: tasks.projectId,
-        createdAt: tasks.createdAt,
-        updatedAt: tasks.updatedAt,
-        description: tasks.description,
-        tags: tasks.tags,
-        noteId: tasks.noteId,
-        priority: tasks.priority,
-        assigneeId: tasks.assigneeId,
-        dueDate: tasks.dueDate,
-        seriesId: tasks.seriesId
-      })
-      .from(tasks)
-      .innerJoin(projects, eq(tasks.projectId, projects.id))
-      .where(eq(projects.spaceId, userId)); // Assuming projects are linked to user spaces
-    return result;
+    return this.getTasksByUser(userId);
   }
 
-  async getUserTimeEntries(userId: string): Promise<TimeEntry[]> {
-    const result = await db
-      .select({
-        id: timeEntries.id,
-        taskId: timeEntries.taskId,
-        createdAt: timeEntries.createdAt,
-        description: timeEntries.description,
-        startTime: timeEntries.startTime,
-        endTime: timeEntries.endTime,
-        duration: timeEntries.duration
-      })
-      .from(timeEntries)
-      .innerJoin(tasks, eq(timeEntries.taskId, tasks.id))
-      .innerJoin(projects, eq(tasks.projectId, projects.id))
-      .where(eq(projects.spaceId, userId)); // Assuming projects are linked to user spaces
-    return result;
+  async getUserTimeEntries(userId: string): Promise<TimeEntry[]>{
+    return this.getTimeEntriesByUser(userId);
   }
 
   // Team Collaboration (Premium)
   async createWorkspace(workspace: InsertWorkspace): Promise<Workspace> {
-    const [result] = await db.insert(workspaces).values(workspace).returning();
-    return result;
+    const newWorkspace: Workspace = {
+      id: nanoid(),
+      spaceId: workspace.spaceId,
+      name: workspace.name,
+      policyManagerNoteAccess: workspace.policyManagerNoteAccess || false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.workspaces.set(newWorkspace.id, newWorkspace);
+    return newWorkspace;
   }
 
   async getWorkspace(id: string): Promise<Workspace | undefined> {
-    const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, id));
-    return workspace;
+    return this.workspaces.get(id);
   }
 
   async createMembership(membership: InsertMembership): Promise<Membership> {
-    const [result] = await db.insert(memberships).values(membership).returning();
-    return result;
+    const newMembership: Membership = {
+      id: nanoid(),
+      ...membership,
+      createdAt: new Date(),
+    };
+    this.memberships.set(newMembership.id, newMembership);
+    return newMembership;
   }
 
   async getWorkspaceMemberships(workspaceId: string): Promise<Membership[]> {
-    return await db.select().from(memberships).where(eq(memberships.workspaceId, workspaceId));
+    return Array.from(this.memberships.values())
+      .filter(m => m.workspaceId === workspaceId);
   }
 
   async getWorkspaceMembers(workspaceId: string): Promise<(Membership & { user: User })[]> {
-    const result = await db
-      .select({
-        // Membership fields
-        id: memberships.id,
-        role: memberships.role,
-        workspaceId: memberships.workspaceId,
-        userId: memberships.userId,
-        createdAt: memberships.createdAt,
-        // User fields
-        user: {
-          id: users.id,
-          email: users.email,
-          firstName: users.firstName,
-          lastName: users.lastName,
-          profileImageUrl: users.profileImageUrl,
-          subscriptionPlan: users.subscriptionPlan,
-          subscriptionStatus: users.subscriptionStatus,
-          stripeCustomerId: users.stripeCustomerId,
-          stripeSubscriptionId: users.stripeSubscriptionId,
-          personalKeyRef: users.personalKeyRef,
-          dailyTaskExtractionCount: users.dailyTaskExtractionCount,
-          lastTaskExtractionReset: users.lastTaskExtractionReset,
-          createdAt: users.createdAt,
-          updatedAt: users.updatedAt
-        }
-      })
-      .from(memberships)
-      .innerJoin(users, eq(memberships.userId, users.id))
-      .where(eq(memberships.workspaceId, workspaceId));
-    return result as (Membership & { user: User })[];
+    const memberships = await this.getWorkspaceMemberships(workspaceId);
+    return memberships.map(membership => ({
+      ...membership,
+      user: this.users.get(membership.userId)!,
+    }));
   }
 
   async updateMembershipRole(workspaceId: string, userId: string, role: string): Promise<void> {
-    await db
-      .update(memberships)
-      .set({ role })
-      .where(and(eq(memberships.workspaceId, workspaceId), eq(memberships.userId, userId)));
+    const membership = Array.from(this.memberships.values())
+      .find(m => m.workspaceId === workspaceId && m.userId === userId);
+
+    if (membership) {
+      membership.role = role;
+      this.memberships.set(membership.id, membership);
+    }
   }
 }
 
-export const storage = new DatabaseStorage();
+// Create storage instance
+export const storage = new MemStorage();

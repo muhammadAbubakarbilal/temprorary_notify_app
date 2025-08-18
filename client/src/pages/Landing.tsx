@@ -39,10 +39,10 @@ export default function Landing() {
           </div>
           <div className="flex items-center gap-4">
             <Button variant="ghost" asChild>
-              <a href="/api/login">Sign In</a>
+              <a href="/signin?mode=login" data-testid="button-signin">Sign In</a>
             </Button>
             <Button asChild>
-              <a href="/api/login">Get Started Free</a>
+              <a href="/signin?mode=signup" data-testid="button-get-started">Get Started Free</a>
             </Button>
           </div>
         </div>
@@ -63,12 +63,14 @@ export default function Landing() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Button size="lg" className="text-lg px-8" asChild>
-              <a href="/api/login">
+              <a href="/signin?mode=signup" data-testid="button-start-free">
                 Start Free Today <ArrowRight className="ml-2 h-5 w-5" />
               </a>
             </Button>
-            <Button size="lg" variant="outline" className="text-lg px-8">
-              Watch Demo
+            <Button size="lg" variant="outline" className="text-lg px-8" asChild>
+              <a href="/signin?mode=login">
+                Sign In
+              </a>
             </Button>
           </div>
         </div>
@@ -124,7 +126,7 @@ export default function Landing() {
               Start free and upgrade when you're ready for more advanced features
             </p>
           </div>
-          
+
           <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
             {/* Free Plan */}
             <Card className="relative">
@@ -143,7 +145,7 @@ export default function Landing() {
               </CardHeader>
               <CardContent>
                 <Button className="w-full mb-6" variant="outline" asChild>
-                  <a href="/api/login">Get Started Free</a>
+                  <a href="/signin?mode=signup">Get Started Free</a>
                 </Button>
                 <div className="space-y-3">
                   <h4 className="font-semibold text-green-700 dark:text-green-400">✅ Included (Free):</h4>
@@ -177,7 +179,7 @@ export default function Landing() {
               </CardHeader>
               <CardContent>
                 <Button className="w-full mb-6" asChild>
-                  <a href="/api/login">Start Premium Trial</a>
+                  <a href="/signin?mode=signup">Start Premium Trial</a>
                 </Button>
                 <div className="space-y-3">
                   <h4 className="font-semibold text-muted-foreground">Everything in Free, PLUS:</h4>
@@ -191,7 +193,7 @@ export default function Landing() {
               </CardContent>
             </Card>
           </div>
-          
+
           {/* Premium Features Highlight */}
           <div className="mt-12 text-center">
             <h3 className="text-xl font-semibold mb-6">Premium Features Preview</h3>
@@ -226,10 +228,10 @@ export default function Landing() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Button size="lg" variant="secondary" className="text-lg px-8" asChild>
-              <a href="/api/login">Start Free Today</a>
+              <a href="/signin?mode=signup">Start Free Today</a>
             </Button>
-            <Button size="lg" variant="outline" className="text-lg px-8 text-white border-white hover:bg-white hover:text-blue-600">
-              Schedule Demo
+            <Button size="lg" variant="outline" className="text-lg px-8 text-white border-white hover:bg-white hover:text-blue-600" asChild>
+              <a href="/signin?mode=login">Sign In</a>
             </Button>
           </div>
         </div>

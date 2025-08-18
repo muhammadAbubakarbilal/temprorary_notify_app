@@ -21,6 +21,7 @@ export const users = pgTable("users", {
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
+  password: text("password"), // For manual authentication
   subscriptionPlan: text("subscription_plan").notNull().default('free'), // 'free' | 'premium'
   subscriptionStatus: text("subscription_status").notNull().default('active'), // 'active' | 'canceled' | 'past_due'
   stripeCustomerId: varchar("stripe_customer_id"),

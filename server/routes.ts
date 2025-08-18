@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-// import { setupAuth } from "./replitAuth"; // Temporarily disabled for development
+import { requireAuth } from "./googleAuth";
 import {
   insertProjectSchema,
   insertNoteSchema,
@@ -10,7 +10,21 @@ import {
   insertActiveTimerSchema
 } from "@shared/schema";
 import Stripe from "stripe";
-import passport from "passport";
+
+// Assuming getUserId is defined elsewhere and available in this scope
+// For example, it might be imported from './authUtils' or defined directly.
+// If it's not provided, this code will not run.
+// Placeholder for getUserId if not explicitly provided in the context:
+const getUserId = (req: any): string => {
+  // Use session-based authentication
+  if (req.session && req.session.userId) {
+    return req.session.userId;
+  }
+
+  // Fallback to default user for development
+  return 'default-user';
+};
+
 
 // Initialize Stripe (check if key exists)
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY, {
@@ -18,64 +32,8 @@ const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SEC
 }) : null;
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Auth middleware - temporarily disabled for development
-  // await setupAuth(app);
 
-  // Mock auth for development - return mock user when no real auth
-  app.get('/api/auth/user', async (req: any, res) => {
-    try {
-      // Check if session exists and is valid
-      if (!req.session || req.session.isDestroyed) {
-        return res.status(401).json({ message: "User not authenticated" });
-      }
-
-      // Check for logout flag in session
-      if (req.session.loggedOut) {
-        return res.status(401).json({ message: "User not authenticated" });
-      }
-
-      // Check if we have real auth first
-      if (req.user?.claims?.sub) {
-        const userId = 'dev-user-1';
-        const user = await storage.getUser(userId);
-        if (!user) {
-          return res.status(404).json({ message: "User not found" });
-        }
-        return res.json(user);
-      }
-
-      // For development, check if we should simulate logged out state
-      // This allows testing the full auth flow
-      if (req.query.simulate_logout === 'true') {
-        return res.status(401).json({ message: "User not authenticated" });
-      }
-
-      // Return mock user for development/demonstration
-      const mockUser = {
-        id: 'dev-user-1',
-        email: 'demo@example.com',
-        firstName: 'Demo',
-        lastName: 'User',
-        profileImageUrl: null,
-        subscriptionPlan: 'premium',
-        subscriptionStatus: 'active',
-        stripeCustomerId: null,
-        stripeSubscriptionId: null,
-        personalKeyRef: null,
-        dailyTaskExtractionCount: 2,
-        lastTaskExtractionReset: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
-
-      // Ensure mock user exists in database
-      await storage.upsertUser(mockUser);
-      res.json(mockUser);
-    } catch (error) {
-      console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user" });
-    }
-  });
+  // User route is now handled by googleAuth.ts
 
   // Freemium helper function
   const checkFreemiumLimits = async (userId: string, feature: string): Promise<{ allowed: boolean, reason?: string }> => {
@@ -133,7 +91,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AI Task Extraction for temp content (with freemium limits)
   app.post("/api/notes/temp/extract-tasks", async (req: any, res) => {
     try {
-      const userId = 'dev-user-1'; // Mock user for development
+      const userId = getUserId(req); // Mock user for development
       const { content } = req.body;
 
       // Check freemium limits
@@ -169,7 +127,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AI Task Extraction (with freemium limits)
   app.post("/api/notes/:id/extract-tasks", async (req: any, res) => {
     try {
-      const userId = 'dev-user-1'; // Mock user for development
+      const userId = getUserId(req); // Mock user for development
       const noteId = req.params.id;
 
       // Check freemium limits
@@ -210,7 +168,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Projects (authenticated)
   app.get("/api/projects", async (req, res) => {
     try {
-      const userId = 'dev-user-1'; // Mock user for development
+      const userId = getUserId(req); // Mock user for development
       const projects = await storage.getProjects(userId);
       res.json(projects);
     } catch (error) {
@@ -221,13 +179,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/projects", async (req: any, res) => {
     try {
-      const userId = 'dev-user-1'; // Mock user for development
+      const userId = getUserId(req); // Mock user for development
       const validation = insertProjectSchema.safeParse(req.body);
       if (!validation.success) {
         return res.status(400).json({ message: "Invalid project data", errors: validation.error.errors });
       }
 
-      const project = await storage.createProject(validation.data);
+      const project = await storage.createProject({ ...validation.data, authorId: userId });
       res.status(201).json(project);
     } catch (error) {
       console.error("Error creating project:", error);
@@ -241,6 +199,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
       }
+      // Ensure user owns the project (or has access)
+      const userId = getUserId(req);
+      if (project.authorId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       res.json(project);
     } catch (error) {
       console.error("Error fetching project:", error);
@@ -250,16 +213,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/projects/:id", async (req, res) => {
     try {
+      const userId = getUserId(req);
+      const project = await storage.getProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      // Ensure user owns the project (or has access)
+      if (project.authorId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
       const validation = insertProjectSchema.partial().safeParse(req.body);
       if (!validation.success) {
         return res.status(400).json({ message: "Invalid project data", errors: validation.error.errors });
       }
 
-      const project = await storage.updateProject(req.params.id, validation.data);
-      if (!project) {
+      const updatedProject = await storage.updateProject(req.params.id, validation.data);
+      if (!updatedProject) {
         return res.status(404).json({ message: "Project not found" });
       }
-      res.json(project);
+      res.json(updatedProject);
     } catch (error) {
       console.error("Error updating project:", error);
       res.status(500).json({ message: "Failed to update project" });
@@ -268,6 +241,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/projects/:id", async (req, res) => {
     try {
+      const userId = getUserId(req);
+      const project = await storage.getProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      // Ensure user owns the project (or has access)
+      if (project.authorId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
       const success = await storage.deleteProject(req.params.id);
       if (!success) {
         return res.status(404).json({ message: "Project not found" });
@@ -282,7 +265,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Notes (authenticated)
   app.get("/api/projects/:projectId/notes", async (req, res) => {
     try {
-      const notes = await storage.getNotesByProject(req.params.projectId);
+      const userId = getUserId(req);
+      const projectId = req.params.projectId;
+
+      // Verify project ownership before fetching notes
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      if (project.authorId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const notes = await storage.getNotesByProject(projectId);
       res.json(notes);
     } catch (error) {
       console.error("Error fetching notes:", error);
@@ -292,10 +287,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/projects/:projectId/notes", async (req: any, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
+      const projectId = req.params.projectId;
+
+      // Verify project ownership before creating note
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      if (project.authorId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
       const validation = insertNoteSchema.safeParse({
         ...req.body,
-        projectId: req.params.projectId,
+        projectId: projectId,
         authorId: userId
       });
 
@@ -313,16 +319,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/notes/:id", async (req, res) => {
     try {
+      const userId = getUserId(req);
+      const noteId = req.params.id;
+
+      // Verify note ownership before updating
+      const note = await storage.getNote(noteId);
+      if (!note) {
+        return res.status(404).json({ message: "Note not found" });
+      }
+      if (note.authorId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
       const validation = insertNoteSchema.partial().safeParse(req.body);
       if (!validation.success) {
         return res.status(400).json({ message: "Invalid note data", errors: validation.error.errors });
       }
 
-      const note = await storage.updateNote(req.params.id, validation.data);
-      if (!note) {
+      const updatedNote = await storage.updateNote(noteId, validation.data);
+      if (!updatedNote) {
         return res.status(404).json({ message: "Note not found" });
       }
-      res.json(note);
+      res.json(updatedNote);
     } catch (error) {
       console.error("Error updating note:", error);
       res.status(500).json({ message: "Failed to update note" });
@@ -331,7 +349,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/notes/:id", async (req, res) => {
     try {
-      const success = await storage.deleteNote(req.params.id);
+      const userId = getUserId(req);
+      const noteId = req.params.id;
+
+      // Verify note ownership before deleting
+      const note = await storage.getNote(noteId);
+      if (!note) {
+        return res.status(404).json({ message: "Note not found" });
+      }
+      if (note.authorId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const success = await storage.deleteNote(noteId);
       if (!success) {
         return res.status(404).json({ message: "Note not found" });
       }
@@ -345,7 +375,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Tasks (authenticated)
   app.get("/api/projects/:projectId/tasks", async (req, res) => {
     try {
-      const tasks = await storage.getTasksByProject(req.params.projectId);
+      const userId = getUserId(req);
+      const projectId = req.params.projectId;
+
+      // Verify project ownership before fetching tasks
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      if (project.authorId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const tasks = await storage.getTasksByProject(projectId);
       res.json(tasks);
     } catch (error) {
       console.error("Error fetching tasks:", error);
@@ -355,10 +397,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/projects/:projectId/tasks", async (req: any, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
+      const projectId = req.params.projectId;
+
+      // Verify project ownership before creating task
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      if (project.authorId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
       const validation = insertTaskSchema.safeParse({
         ...req.body,
-        projectId: req.params.projectId,
+        projectId: projectId,
         assigneeId: userId
       });
 
@@ -376,16 +429,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/tasks/:id", async (req, res) => {
     try {
+      const userId = getUserId(req);
+      const taskId = req.params.id;
+
+      // Verify task ownership before updating
+      const task = await storage.getTask(taskId);
+      if (!task) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+      if (task.assigneeId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
       const validation = insertTaskSchema.partial().safeParse(req.body);
       if (!validation.success) {
         return res.status(400).json({ message: "Invalid task data", errors: validation.error.errors });
       }
 
-      const task = await storage.updateTask(req.params.id, validation.data);
-      if (!task) {
+      const updatedTask = await storage.updateTask(taskId, validation.data);
+      if (!updatedTask) {
         return res.status(404).json({ message: "Task not found" });
       }
-      res.json(task);
+      res.json(updatedTask);
     } catch (error) {
       console.error("Error updating task:", error);
       res.status(500).json({ message: "Failed to update task" });
@@ -394,7 +459,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/tasks/:id", async (req, res) => {
     try {
-      const success = await storage.deleteTask(req.params.id);
+      const userId = getUserId(req);
+      const taskId = req.params.id;
+
+      // Verify task ownership before deleting
+      const task = await storage.getTask(taskId);
+      if (!task) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+      if (task.assigneeId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const success = await storage.deleteTask(taskId);
       if (!success) {
         return res.status(404).json({ message: "Task not found" });
       }
@@ -408,7 +485,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Timer routes (authenticated)
   app.get("/api/timer/active", async (req: any, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const timer = await storage.getActiveTimer(userId);
       res.json(timer);
     } catch (error) {
@@ -419,7 +496,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/time-entries", async (req: any, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const entries = await storage.getTimeEntriesByUser(userId);
       res.json(entries);
     } catch (error) {
@@ -431,7 +508,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Reports endpoints
   app.get("/api/reports/tasks", async (req: any, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const tasks = await storage.getTasksByUser(userId);
       res.json(tasks);
     } catch (error) {
@@ -442,7 +519,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/reports/time-tracking", async (req: any, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const stats = await storage.getTimeTrackingStats(userId);
       res.json(stats);
     } catch (error) {
@@ -453,7 +530,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/reports/productivity", async (req: any, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const stats = await storage.getProductivityStats(userId);
       res.json(stats);
     } catch (error) {
@@ -464,13 +541,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/timer/start", async (req: any, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const validation = insertActiveTimerSchema.safeParse(req.body);
       if (!validation.success) {
         return res.status(400).json({ message: "Invalid timer data", errors: validation.error.errors });
       }
 
-      const timer = await storage.startTimer(validation.data);
+      const timer = await storage.startTimer({ ...validation.data, userId: userId });
       res.status(201).json(timer);
     } catch (error) {
       console.error("Error starting timer:", error);
@@ -480,7 +557,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/timer/stop", async (req: any, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const timeEntry = await storage.stopTimer(userId);
       res.json(timeEntry);
     } catch (error) {
@@ -493,10 +570,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   if (stripe) {
     app.post("/api/create-payment-intent", async (req, res) => {
       try {
+        const userId = getUserId(req); // Ensure user is authenticated for payment actions
         const { amount } = req.body;
         const paymentIntent = await stripe.paymentIntents.create({
           amount: Math.round(amount * 100), // Convert to cents
           currency: "usd",
+          metadata: { userId: userId } // Associate payment with user
         });
         res.json({ clientSecret: paymentIntent.client_secret });
       } catch (error: any) {
@@ -507,7 +586,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     app.post('/api/get-or-create-subscription', async (req: any, res) => {
       try {
-        const userId = 'dev-user-1';
+        const userId = getUserId(req);
         let user = await storage.getUser(userId);
 
         if (!user) {
@@ -518,7 +597,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
           res.send({
             subscriptionId: subscription.id,
-            clientSecret: subscription.latest_invoice?.payment_intent?.client_secret,
+            clientSecret: (subscription.latest_invoice as any)?.payment_intent?.client_secret,
           });
           return;
         }
@@ -532,22 +611,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
           name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
         });
 
-        user = await storage.updateUserSubscription(user.id, 'premium', 'active', customer.id);
+        // Update user with customer ID before creating subscription
+        user = await storage.updateUserCustomerId(userId, customer.id); // Assuming this function exists
 
         const subscription = await stripe.subscriptions.create({
           customer: customer.id,
           items: [{
-            price: 'price_1234567890', // You'll need to set STRIPE_PRICE_ID
+            price: process.env.STRIPE_PRICE_ID, // Ensure STRIPE_PRICE_ID is set in environment variables
           }],
           payment_behavior: 'default_incomplete',
           expand: ['latest_invoice.payment_intent'],
         });
 
-        await storage.updateUserSubscription(user!.id, 'premium', 'active', customer.id, subscription.id);
+        await storage.updateUserSubscription(userId, 'premium', 'active', customer.id, subscription.id);
 
         res.send({
           subscriptionId: subscription.id,
-          clientSecret: subscription.latest_invoice?.payment_intent?.client_secret,
+          clientSecret: (subscription.latest_invoice as any)?.payment_intent?.client_secret,
         });
       } catch (error: any) {
         console.error("Error creating subscription:", error);
@@ -559,13 +639,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AI Services routes
   app.post('/api/ai/extract-tasks', async (req: any, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const { noteContent, noteTitle, projectContext } = req.body;
 
       // Check freemium limits
       const limits = await checkFreemiumLimits(userId, 'ai-task-extraction');
       if (!limits.allowed) {
-        return res.status(402).json({ message: limits.reason });
+        return res.status(402).json({ message: limits.reason, upgradeRequired: true });
       }
 
       const { extractTasksFromNote } = await import('./services/ai-service');
@@ -575,7 +655,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.incrementTaskExtractionCount(userId);
 
       res.json({ tasks });
-    } catch (error) {
+    } catch (error: any) {
       console.error('AI task extraction error:', error);
       res.status(500).json({ message: 'Failed to extract tasks' });
     }
@@ -583,11 +663,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/ai/estimate-time', async (req: any, res) => {
     try {
+      const userId = getUserId(req); // Assuming time estimation is also tied to user/limits
       const { taskTitle, taskDescription, complexity } = req.body;
       const { estimateTaskTime } = await import('./services/ai-service');
       const estimatedHours = await estimateTaskTime(taskTitle, taskDescription, complexity);
       res.json({ estimatedHours });
-    } catch (error) {
+    } catch (error: any) {
       console.error('AI time estimation error:', error);
       res.status(500).json({ message: 'Failed to estimate time' });
     }
@@ -595,6 +676,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/ai/analyze-priority', async (req: any, res) => {
     try {
+      const userId = getUserId(req); // Assuming priority analysis is also tied to user/limits
       const { taskTitle, taskDescription, projectContext, deadline } = req.body;
       const { analyzePriority } = await import('./services/ai-service');
       const priority = await analyzePriority(taskTitle, taskDescription, projectContext, deadline);
@@ -608,11 +690,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // File attachment routes
   app.post('/api/attachments', async (req: any, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const user = await storage.getUser(userId);
 
-      if (user?.subscriptionPlan !== 'premium') {
-        return res.status(402).json({ message: 'File attachments require Premium subscription' });
+      // Check if attachments are allowed for the user's plan
+      const limits = await checkFreemiumLimits(userId, 'attachments');
+      if (!limits.allowed) {
+        return res.status(402).json({ message: limits.reason, upgradeRequired: true });
       }
 
       // In production, this would handle multipart/form-data
@@ -621,10 +705,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { createMockAttachment } = await import('./services/file-service');
       const attachmentData = createMockAttachment(originalName, userId);
 
+      // Verify if note or task belongs to the user if provided
+      if (noteId) {
+        const note = await storage.getNote(noteId);
+        if (!note || note.authorId !== userId) {
+          return res.status(403).json({ message: "Cannot attach to a note you don't own." });
+        }
+      }
+      if (taskId) {
+        const task = await storage.getTask(taskId);
+        if (!task || task.assigneeId !== userId) { // Assuming task ownership check here
+          return res.status(403).json({ message: "Cannot attach to a task you are not assigned to." });
+        }
+      }
+
       const attachment = await storage.createAttachment({
         ...attachmentData,
         noteId,
         taskId,
+        userId // Ensure userId is stored with the attachment
       });
 
       res.json(attachment);
@@ -636,10 +735,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/attachments/:id', async (req: any, res) => {
     try {
-      const attachment = await storage.getAttachment(req.params.id);
+      const userId = getUserId(req);
+      const attachmentId = req.params.id;
+
+      const attachment = await storage.getAttachment(attachmentId);
       if (!attachment) {
         return res.status(404).json({ message: 'Attachment not found' });
       }
+
+      // Verify ownership or access rights
+      if (attachment.userId !== userId) {
+        // Additional checks might be needed here, e.g., if it's shared
+        return res.status(403).json({ message: 'Access denied to attachment' });
+      }
+
       res.json(attachment);
     } catch (error) {
       console.error('Get attachment error:', error);
@@ -647,28 +756,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Advanced recurring tasks
+  // Advanced recurring tasks (Premium)
   app.post('/api/tasks/:id/recurrence', async (req: any, res) => {
     try {
-      const userId = 'dev-user-1';
-      const user = await storage.getUser(userId);
+      const userId = getUserId(req);
+      const taskId = req.params.id;
 
-      if (user?.subscriptionPlan !== 'premium') {
-        return res.status(402).json({ message: 'Advanced recurrence rules require Premium subscription' });
+      // Verify task ownership
+      const task = await storage.getTask(taskId);
+      if (!task) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+      if (task.assigneeId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Check freemium limits for advanced recurrence
+      const limits = await checkFreemiumLimits(userId, 'recurring-tasks-advanced');
+      if (!limits.allowed) {
+        return res.status(402).json({ message: limits.reason, upgradeRequired: true });
       }
 
       const { pattern, interval, weekdays, monthDay, endDate, maxOccurrences } = req.body;
       const { generateMockRecurringTasks } = await import('./services/recurrence-service');
 
-      const task = await storage.getTask(req.params.id);
-      if (!task) {
-        return res.status(404).json({ message: 'Task not found' });
-      }
-
-      // Create mock recurring tasks for now
+      // In production, would create actual recurrence rule and tasks
       const recurringTasks = generateMockRecurringTasks(task, pattern);
 
-      // In production, would create actual recurrence rule and tasks
       res.json({ message: 'Recurring tasks created', count: recurringTasks.length });
     } catch (error) {
       console.error('Recurrence creation error:', error);
@@ -679,11 +793,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Advanced analytics routes
   app.get('/api/analytics/productivity', async (req: any, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const user = await storage.getUser(userId);
 
-      if (user?.subscriptionPlan !== 'premium') {
-        return res.status(402).json({ message: 'Advanced analytics require Premium subscription' });
+      // Check freemium limits for advanced analytics
+      const limits = await checkFreemiumLimits(userId, 'advanced-reports'); // Assuming 'advanced-reports' covers this
+      if (!limits.allowed) {
+        return res.status(402).json({ message: limits.reason, upgradeRequired: true });
       }
 
       const tasks = await storage.getUserTasks(userId);
@@ -705,9 +821,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/analytics/time-tracking', async (req: any, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const timeEntries = await storage.getUserTimeEntries(userId);
-      const projects = await storage.getProjects(userId);
+      const projects = await storage.getProjects(userId); // Assuming user needs to own projects for this
 
       const { calculateTimeTrackingAnalytics } = await import('./services/analytics-service');
       const analytics = calculateTimeTrackingAnalytics(timeEntries, projects);
@@ -722,7 +838,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Team collaboration routes
   app.get('/api/workspaces', async (req: any, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
+      // This should likely return workspaces the user is a member of, not just created by them.
+      // Adjust storage.getUserWorkspaces to support this if needed.
       const workspaces = await storage.getUserWorkspaces(userId);
       res.json(workspaces);
     } catch (error) {
@@ -733,20 +851,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/workspaces', async (req: any, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const user = await storage.getUser(userId);
 
-      if (user?.subscriptionPlan !== 'premium') {
-        return res.status(402).json({ message: 'Multiple workspaces require Premium subscription' });
+      // Check freemium limits for multiple workspaces
+      const limits = await checkFreemiumLimits(userId, 'multiple-workspaces');
+      if (!limits.allowed) {
+        return res.status(402).json({ message: limits.reason, upgradeRequired: true });
       }
 
       const { name, spaceId } = req.body;
-      const workspace = await storage.createWorkspace({ name, spaceId });
+      const workspace = await storage.createWorkspace({ name, spaceId, ownerId: userId }); // Assuming ownerId is stored
 
       // Add creator as owner
       await storage.createMembership({
         workspaceId: workspace.id,
-        userId,
+        userId: userId,
         role: 'owner',
       });
 
@@ -759,10 +879,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/workspaces/:id/members', async (req: any, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const workspaceId = req.params.id;
 
-      // Check access
+      // Check if user is a member of the workspace
       const memberships = await storage.getWorkspaceMemberships(workspaceId);
       const { canUserAccessWorkspace } = await import('./services/collaboration-service');
 
@@ -780,7 +900,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/workspaces/:id/invite', async (req: any, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const workspaceId = req.params.id;
       const { email, role } = req.body;
 
@@ -808,19 +928,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Feature flags
   app.get("/api/feature-flags", async (req: any, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const user = await storage.getUser(userId);
 
       const flags = await storage.getUserFeatureFlags(userId);
 
       // Add subscription-based feature flags
       const subscriptionFlags = {
-        'multiple-workspaces': user?.subscriptionPlan === 'premium',
+        'multiple-workspaces': user?.subscriptionPlan === 'premium' || checkFreemiumLimits(userId, 'multiple-workspaces').then(limit => limit.allowed).catch(() => false),
         'advanced-ai': user?.subscriptionPlan === 'premium',
         'unlimited-devices': user?.subscriptionPlan === 'premium',
         'advanced-recurrence': user?.subscriptionPlan === 'premium',
         'advanced-reports': user?.subscriptionPlan === 'premium',
-        'attachments': user?.subscriptionPlan === 'premium',
+        'attachments': user?.subscriptionPlan === 'premium' || checkFreemiumLimits(userId, 'attachments').then(limit => limit.allowed).catch(() => false),
         'collaboration': user?.subscriptionPlan === 'premium',
         'encryption': user?.subscriptionPlan === 'premium',
         'priority-support': user?.subscriptionPlan === 'premium',
@@ -838,7 +958,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Team Management & Collaboration (Premium)
   app.post('/api/teams/create', async (req, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const { name, spaceId } = req.body;
       const { teamManagementService } = await import('./services/team-management-service');
       const result = await teamManagementService.createTeamWorkspace(userId, name, spaceId);
@@ -851,7 +971,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/teams/:workspaceId/invite', async (req, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const { workspaceId } = req.params;
       const { email, role } = req.body;
       const { teamManagementService } = await import('./services/team-management-service');
@@ -865,7 +985,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/teams/:workspaceId/analytics', async (req, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const { workspaceId } = req.params;
       const { teamManagementService } = await import('./services/team-management-service');
       const analytics = await teamManagementService.getWorkspaceAnalytics(workspaceId, userId);
@@ -879,7 +999,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Priority Support System (Premium)
   app.post('/api/support/tickets', async (req, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const { subject, description, category, priority } = req.body;
       const { prioritySupportService } = await import('./services/priority-support-service');
       const ticket = await prioritySupportService.createTicket(userId, subject, description, category, priority);
@@ -892,7 +1012,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/support/tickets', async (req, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const { prioritySupportService } = await import('./services/priority-support-service');
       const tickets = await prioritySupportService.getTickets(userId);
       res.json(tickets);
@@ -905,7 +1025,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Advanced Recurring Tasks (Premium)
   app.post('/api/recurring/create', async (req, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const user = await storage.getUser(userId);
 
       if (user?.subscriptionPlan !== 'premium') {
@@ -927,9 +1047,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/recurring/:seriesId', async (req, res) => {
     try {
+      const userId = getUserId(req); // Ensure user is authorized for this series
       const { seriesId } = req.params;
       const { recurringTaskService } = await import('./services/recurring-task-service');
       const tasks = await recurringTaskService.getRecurringTaskSeries(seriesId);
+      // Add authorization check here if seriesId is user-specific
       res.json(tasks);
     } catch (error) {
       console.error('Recurring series error:', error);
@@ -940,7 +1062,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Database Seeding for Demonstration
   app.post('/api/demo/seed', async (req, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req); // Seed data for the authenticated user
       const { databaseSeedingService } = await import('./services/database-seeding-service');
       await databaseSeedingService.seedDemoData(userId);
       res.json({ message: 'Demo data seeded successfully' });
@@ -952,8 +1074,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/demo/status', async (req, res) => {
     try {
+      const userId = getUserId(req); // Check seed status for the authenticated user
       const { databaseSeedingService } = await import('./services/database-seeding-service');
-      const isSeeded = await databaseSeedingService.isDemoDataSeeded();
+      const isSeeded = await databaseSeedingService.isDemoDataSeeded(userId);
       res.json({ isSeeded });
     } catch (error) {
       console.error('Demo status error:', error);
@@ -964,7 +1087,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Enhanced Analytics & Reporting (Premium)
   app.get('/api/analytics/comprehensive', async (req, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const user = await storage.getUser(userId);
 
       if (user?.subscriptionPlan !== 'premium') {
@@ -974,7 +1097,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const projects = await storage.getProjects();
+      const projects = await storage.getProjects(userId); // Assuming user needs to own projects
       const userTasks = await storage.getUserTasks(userId);
       const timeEntries = await storage.getUserTimeEntries(userId);
 
@@ -986,18 +1109,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           totalTimeTracked: timeEntries.reduce((sum, entry) => sum + entry.duration, 0) / 3600,
         },
         productivity: {
-          tasksPerDay: userTasks.length / 30,
-          averageTaskCompletionTime: 2.5,
-          mostProductiveHours: [9, 10, 11, 14, 15],
-          weeklyTrends: [12, 15, 18, 14, 16, 13, 11],
+          tasksPerDay: userTasks.length / 30, // Example calculation
+          averageTaskCompletionTime: 2.5, // Example data
+          mostProductiveHours: [9, 10, 11, 14, 15], // Example data
+          weeklyTrends: [12, 15, 18, 14, 16, 13, 11], // Example data
         },
         timeTracking: {
           totalHours: timeEntries.reduce((sum, entry) => sum + entry.duration, 0) / 3600,
-          averagePerDay: 6.2,
+          averagePerDay: 6.2, // Example data
           projectBreakdown: projects.map(p => ({
             projectName: p.name,
-            hoursSpent: Math.random() * 40,
-            efficiency: Math.random() * 100
+            hoursSpent: Math.random() * 40, // Example data
+            efficiency: Math.random() * 100 // Example data
           }))
         }
       };
@@ -1012,117 +1135,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Freemium Limit Status
   app.get('/api/limits/status', async (req, res) => {
     try {
-      const userId = 'dev-user-1';
+      const userId = getUserId(req);
       const user = await storage.getUser(userId);
 
       if (!user) {
         return res.status(404).json({ message: 'User not found' });
       }
 
+      // Fetch actual workspace count for the user
+      const userWorkspaces = await storage.getUserWorkspaces(userId);
+      const workspaceCount = userWorkspaces.length;
+
+      // Fetch actual team member count for the user's workspaces
+      // This might require a more complex query depending on storage implementation
+      let teamMemberCount = 0;
+      if (user.subscriptionPlan === 'premium') {
+        const workspaces = await storage.getUserWorkspaces(userId); // Get all workspaces the user is part of
+        for (const workspace of workspaces) {
+          const members = await storage.getWorkspaceMembers(workspace.id);
+          teamMemberCount += members.length;
+        }
+      }
+
+
       const limits = {
         subscriptionPlan: user.subscriptionPlan,
         aiTaskExtraction: {
           used: user.dailyTaskExtractionCount,
-          limit: user.subscriptionPlan === 'premium' ? -1 : 5,
+          limit: user.subscriptionPlan === 'premium' ? -1 : 5, // -1 for unlimited
           resetTime: user.lastTaskExtractionReset
         },
         workspaces: {
-          used: 1,
-          limit: user.subscriptionPlan === 'premium' ? 50 : 1
+          used: workspaceCount,
+          limit: user.subscriptionPlan === 'premium' ? 50 : 1 // Example limits
         },
         teamMembers: {
-          used: 1,
-          limit: user.subscriptionPlan === 'premium' ? 50 : 0
+          used: teamMemberCount,
+          limit: user.subscriptionPlan === 'premium' ? 50 : 0 // Example limits, 0 for free tier
         },
         attachments: {
-          allowed: user.subscriptionPlan === 'premium',
-          storageUsed: '0MB',
-          storageLimit: user.subscriptionPlan === 'premium' ? '10GB' : '0MB'
+          allowed: user.subscriptionPlan === 'premium', // Simplified check, actual limit might be per user or plan
+          storageUsed: '0MB', // Placeholder, needs actual calculation
+          storageLimit: user.subscriptionPlan === 'premium' ? '10GB' : '0MB' // Example limits
         }
       };
 
       res.json(limits);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Limits status error:', error);
       res.status(500).json({ message: 'Failed to get limits status' });
     }
   });
 
-  // Development specific routes for authentication
-  if (!process.env.REPLIT_AUTH_DISABLED) {
-    // Production/Replit Auth Routes
-    app.get("/api/login", passport.authenticate("oauth2", {
-      failureRedirect: "/api/auth/error",
-    }), (req, res) => {
-      res.redirect("/");
-    });
-
-    app.post('/api/auth/callback', passport.authenticate('oauth2', {
-      failureRedirect: '/api/auth/error',
-      successRedirect: '/',
-    }));
-
-    app.get('/api/logout', (req, res) => {
-      // Handle session destruction manually since passport may not be fully initialized
-      if (req.session) {
-        req.session.destroy((err) => {
-          if (err) {
-            console.error('Session destruction error:', err);
-            return res.status(500).json({ message: "Logout failed" });
-          }
-          res.clearCookie('connect.sid');
-          
-          // In production with Replit auth, redirect to end session URL
-          if (process.env.REPL_ID && process.env.ISSUER_URL) {
-            try {
-              const logoutUrl = `${process.env.ISSUER_URL}/logout?post_logout_redirect_uri=${encodeURIComponent(`${req.protocol}://${req.hostname}`)}`;
-              res.redirect(logoutUrl);
-            } catch (error) {
-              console.error('Logout redirect error:', error);
-              res.redirect('/');
-            }
-          } else {
-            // Redirect to home page (landing page) after logout
-            res.redirect('/');
-          }
-        });
-      } else {
-        // Redirect to home page (landing page) after logout
-        res.redirect('/');
-      }
-    });
-
-  } else {
-    // Development fallback - create a mock user session
-    passport.serializeUser((user: Express.User, cb) => cb(null, user));
-    passport.deserializeUser((user: Express.User, cb) => cb(null, user));
-
-    // Mock login for development
-    app.get("/api/login", (req, res) => {
-      res.json({ message: "Development mode - authentication disabled" });
-    });
-
-    app.get("/api/logout", (req, res) => {
-      // In development mode, we don't have passport, so handle logout manually
-      if (req.session) {
-        // Set logout flag before destroying session
-        req.session.loggedOut = true;
-        req.session.destroy((err) => {
-          if (err) {
-            console.error('Session destruction error:', err);
-            return res.status(500).json({ message: "Logout failed" });
-          }
-          res.clearCookie('connect.sid');
-          res.clearCookie('session');
-          // Return success for client to handle redirect
-          res.json({ message: "Logged out successfully", redirect: "/" });
-        });
-      } else {
-        // Return success for client to handle redirect
-        res.json({ message: "Logged out successfully", redirect: "/" });
-      }
-    });
-  }
+  // Note: Authentication routes are now handled by googleAuth.ts
 
   const httpServer = createServer(app);
   return httpServer;

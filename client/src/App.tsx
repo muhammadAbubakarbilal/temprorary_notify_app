@@ -7,10 +7,15 @@ import { useAuth } from "@/hooks/useAuth";
 import Dashboard from "@/pages/dashboard";
 import Landing from "@/pages/Landing";
 import Subscribe from "@/pages/Subscribe";
+import SignIn from "@/pages/SignIn";
 import NotFound from "@/pages/not-found";
+import { useEffect } from "react";
+import { useLocation } from "wouter";
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
+  const [location, setLocation] = useLocation();
+
 
   if (isLoading) {
     return (
@@ -25,11 +30,15 @@ function Router() {
       <Route path="/" nest>
         {isAuthenticated ? <Dashboard /> : <Landing />}
       </Route>
+      <Route path="/signin" component={SignIn} />
+      <Route path="/dashboard">
+        {isAuthenticated ? <Dashboard /> : <SignIn />}
+      </Route>
       <Route path="/project/:id">
-        {isAuthenticated ? <Dashboard /> : <Landing />}
+        {isAuthenticated ? <Dashboard /> : <SignIn />}
       </Route>
       <Route path="/subscribe">
-        {isAuthenticated ? <Subscribe /> : <Landing />}
+        {isAuthenticated ? <Subscribe /> : <SignIn />}
       </Route>
       <Route component={NotFound} />
     </Switch>

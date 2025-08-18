@@ -1,21 +1,19 @@
 import { useState } from "react";
 import * as React from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
-import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import Sidebar from "@/components/sidebar";
 import NotesEditor from "@/components/notes-editor";
 import KanbanBoard from "@/components/kanban-board";
 import TimeTracking from "@/components/time-tracking";
 import SpaceSwitcher from "@/components/space-switcher";
-import FreemiumBanner from "@/components/freemium-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Share, MoreHorizontal, Menu, Edit, CheckSquare, Clock, Crown, LogOut, Settings, Calendar, Users, FileText, BarChart3 } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
+import { Share, MoreHorizontal, Menu, Edit, CheckSquare, Clock, Settings, Calendar, Users, FileText, BarChart3 } from "lucide-react";
 import UserSettings from "@/components/user-settings";
 import Reports from "@/components/reports";
 import RecurringTasks from "@/components/recurring-tasks";
@@ -33,7 +31,7 @@ type SpaceType = 'personal' | 'professional';
 
 export default function Dashboard() {
   const { id: projectId } = useParams();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('notes');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [currentProjectId, setCurrentProjectId] = useState(projectId || 'project-1');
@@ -204,30 +202,25 @@ export default function Dashboard() {
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setActiveTab('notes')}>
-                    <Edit className="h-4 w-4 mr-2" />
-                    Edit Project
-                  </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    <Crown className="h-4 w-4 mr-2" />
-                    Upgrade to Pro
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setActiveTab('settings')}>
-                    <CheckSquare className="h-4 w-4 mr-2" />
-                    Project Settings
-                  </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    <Clock className="h-4 w-4 mr-2" />
-                    Export Data
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem className="text-red-600">
-                    <LogOut className="h-4 w-4 mr-2" />
-                    Archive Project
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
+                <DropdownMenuContent className="w-56" align="end">
+                        <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem>Profile</DropdownMenuItem>
+                        <DropdownMenuItem>Settings</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem 
+                          onClick={async () => {
+                            try {
+                              await logout.mutateAsync();
+                              window.location.href = '/';
+                            } catch (error) {
+                              console.error('Logout error:', error);
+                            }
+                          }}
+                        >
+                          Log out
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
               </DropdownMenu>
             </div>
           </div>
