@@ -22,15 +22,15 @@ function Router() {
 
   return (
     <Switch>
-      {!isAuthenticated ? (
-        <Route path="/" component={Landing} />
-      ) : (
-        <>
-          <Route path="/" component={Dashboard} />
-          <Route path="/project/:id" component={Dashboard} />
-          <Route path="/subscribe" component={Subscribe} />
-        </>
-      )}
+      <Route path="/" nest>
+        {isAuthenticated ? <Dashboard /> : <Landing />}
+      </Route>
+      <Route path="/project/:id">
+        {isAuthenticated ? <Dashboard /> : <Landing />}
+      </Route>
+      <Route path="/subscribe">
+        {isAuthenticated ? <Subscribe /> : <Landing />}
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );

@@ -41,7 +41,7 @@ function FileAttachments({ taskId, noteId, projectId }: FileAttachmentsProps) {
   const queryClient = useQueryClient();
 
   // Fetch attachments
-  const { data: attachments = [], isLoading } = useQuery({
+  const { data: attachmentsData, isLoading } = useQuery({
     queryKey: ['/api/attachments', { taskId, noteId, projectId }],
     queryFn: () => {
       const params = new URLSearchParams();
@@ -52,6 +52,9 @@ function FileAttachments({ taskId, noteId, projectId }: FileAttachmentsProps) {
     },
     enabled: !!(taskId || noteId || projectId),
   });
+
+  // Ensure attachments is always an array
+  const attachments = Array.isArray(attachmentsData) ? attachmentsData : [];
 
   // Upload mutation
   const uploadMutation = useMutation({

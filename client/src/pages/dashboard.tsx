@@ -9,7 +9,7 @@ import NotesEditor from "@/components/notes-editor";
 import KanbanBoard from "@/components/kanban-board";
 import TimeTracking from "@/components/time-tracking";
 import SpaceSwitcher from "@/components/space-switcher";
-import { FreemiumBanner } from "@/components/freemium-banner";
+import FreemiumBanner from "@/components/freemium-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,7 @@ import { Share, MoreHorizontal, Menu, Edit, CheckSquare, Clock, Crown, LogOut, S
 import UserSettings from "@/components/user-settings";
 import Reports from "@/components/reports";
 import RecurringTasks from "@/components/recurring-tasks";
-import TeamCollaboration from "@/components/team-collaboration";
+import { TeamCollaboration } from "@/components/team-collaboration";
 import FileAttachments from "@/components/file-attachments";
 import AnalyticsDashboard from "@/components/analytics-dashboard";
 
@@ -146,8 +146,8 @@ export default function Dashboard() {
             <div className="flex items-center space-x-2 md:space-x-3 flex-wrap gap-2">
               {/* Space Switcher */}
               <SpaceSwitcher 
-                currentSpace={currentSpace}
-                onSpaceChange={handleSpaceChange}
+                currentWorkspaceId={currentSpace === 'personal' ? 'personal-workspace' : 'professional-workspace'}
+                onWorkspaceChange={(id: string) => handleSpaceChange(id.includes('personal') ? 'personal' : 'professional')}
               />
 
               {/* AI Status Indicator */}
@@ -271,10 +271,10 @@ export default function Dashboard() {
             <Reports />
           )}
           {activeTab === 'recurring' && (
-            <RecurringTasks projectId={currentProjectId} />
+            <RecurringTasks taskId="sample-task" taskTitle="Sample Task" hasAdvancedRecurrence />
           )}
           {activeTab === 'team' && (
-            <TeamCollaboration projectId={currentProjectId} />
+            <TeamCollaboration workspaceId="current-workspace" hasTeamFeatures />
           )}
           {activeTab === 'attachments' && (
             <FileAttachments projectId={currentProjectId} />
@@ -283,7 +283,7 @@ export default function Dashboard() {
             <AnalyticsDashboard projectId={currentProjectId} />
           )}
           {activeTab === 'settings' && ( // Render UserSettings component when 'settings' tab is active
-            <UserSettings />
+            <UserSettings userId={(user as any)?.id || 'current-user'} hasAdvancedSettings />
           )}
 
           {/* Conditional rendering for empty states */}

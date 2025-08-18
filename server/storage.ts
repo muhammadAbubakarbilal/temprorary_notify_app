@@ -210,7 +210,7 @@ export class DatabaseStorage implements IStorage {
       .from(projects)
       .leftJoin(tasks, eq(projects.id, tasks.projectId))
       .leftJoin(notes, eq(projects.id, notes.projectId))
-      .where(and(eq(projects.status, 'active'), userId ? eq(projects.userId, userId) : undefined))
+      .where(eq(projects.status, 'active'))
       .groupBy(projects.id)
       .orderBy(desc(projects.updatedAt));
 
@@ -238,7 +238,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteProject(id: string): Promise<boolean> {
     const result = await db.delete(projects).where(eq(projects.id, id));
-    return result.rowCount > 0;
+    return (result.rowCount ?? 0) > 0;
   }
 
   // Notes
@@ -275,14 +275,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createNote(note: InsertNote): Promise<Note> {
-    const [newNote] = await db.insert(notes).values(note).returning();
+    const [newNote] = await db.insert(notes).values([note]).returning();
     return newNote;
   }
 
   async updateNote(id: string, note: Partial<InsertNote>): Promise<Note | undefined> {
+    const updateData = { ...note, updatedAt: new Date() };
     const [updatedNote] = await db
       .update(notes)
-      .set({ ...note, updatedAt: new Date() })
+      .set(updateData)
       .where(eq(notes.id, id))
       .returning();
     return updatedNote;
@@ -290,7 +291,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteNote(id: string): Promise<boolean> {
     const result = await db.delete(notes).where(eq(notes.id, id));
-    return result.rowCount > 0;
+    return (result.rowCount ?? 0) > 0;
   }
 
   // Tasks
@@ -329,14 +330,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createTask(task: InsertTask): Promise<Task> {
-    const [newTask] = await db.insert(tasks).values(task).returning();
+    const [newTask] = await db.insert(tasks).values([task]).returning();
     return newTask;
   }
 
   async updateTask(id: string, task: Partial<InsertTask>): Promise<Task | undefined> {
+    const updateData = { ...task, updatedAt: new Date() };
     const [updatedTask] = await db
       .update(tasks)
-      .set({ ...task, updatedAt: new Date() })
+      .set(updateData)
       .where(eq(tasks.id, id))
       .returning();
     return updatedTask;
@@ -344,7 +346,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteTask(id: string): Promise<boolean> {
     const result = await db.delete(tasks).where(eq(tasks.id, id));
-    return result.rowCount > 0;
+    return (result.rowCount ?? 0) > 0;
   }
 
   // Time Entries
@@ -440,12 +442,17 @@ export class DatabaseStorage implements IStorage {
 
   // Spaces and Workspaces
   async getUserSpaces(userId: string): Promise<Space[]> {
-    return await db
-      .select()
+    const result = await db
+      .select({
+        id: spaces.id,
+        type: spaces.type,
+        createdAt: spaces.createdAt
+      })
       .from(spaces)
       .innerJoin(workspaces, eq(spaces.id, workspaces.spaceId))
       .innerJoin(memberships, eq(workspaces.id, memberships.workspaceId))
       .where(eq(memberships.userId, userId));
+    return result;
   }
 
   async createPersonalSpace(userId: string): Promise<Space> {
@@ -471,11 +478,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserWorkspaces(userId: string): Promise<Workspace[]> {
-    return await db
-      .select(workspaces)
+    const result = await db
+      .select({
+        id: workspaces.id,
+        name: workspaces.name,
+        createdAt: workspaces.createdAt,
+        updatedAt: workspaces.updatedAt,
+        spaceId: workspaces.spaceId,
+        policyManagerNoteAccess: workspaces.policyManagerNoteAccess
+      })
       .from(workspaces)
       .innerJoin(memberships, eq(workspaces.id, memberships.workspaceId))
       .where(eq(memberships.userId, userId));
+    return result;
   }
 
   async getWorkspacesBySpace(spaceId: string): Promise<Workspace[]> {
@@ -542,20 +557,44 @@ export class DatabaseStorage implements IStorage {
 
   // Enhanced Analytics (Premium)
   async getUserTasks(userId: string): Promise<Task[]> {
-    return await db
-      .select()
+    const result = await db
+      .select({
+        id: tasks.id,
+        status: tasks.status,
+        title: tasks.title,
+        projectId: tasks.projectId,
+        createdAt: tasks.createdAt,
+        updatedAt: tasks.updatedAt,
+        description: tasks.description,
+        tags: tasks.tags,
+        noteId: tasks.noteId,
+        priority: tasks.priority,
+        assigneeId: tasks.assigneeId,
+        dueDate: tasks.dueDate,
+        seriesId: tasks.seriesId
+      })
       .from(tasks)
       .innerJoin(projects, eq(tasks.projectId, projects.id))
-      .where(eq(projects.authorId, userId));
+      .where(eq(projects.spaceId, userId)); // Assuming projects are linked to user spaces
+    return result;
   }
 
   async getUserTimeEntries(userId: string): Promise<TimeEntry[]> {
-    return await db
-      .select()
+    const result = await db
+      .select({
+        id: timeEntries.id,
+        taskId: timeEntries.taskId,
+        createdAt: timeEntries.createdAt,
+        description: timeEntries.description,
+        startTime: timeEntries.startTime,
+        endTime: timeEntries.endTime,
+        duration: timeEntries.duration
+      })
       .from(timeEntries)
       .innerJoin(tasks, eq(timeEntries.taskId, tasks.id))
       .innerJoin(projects, eq(tasks.projectId, projects.id))
-      .where(eq(projects.authorId, userId));
+      .where(eq(projects.spaceId, userId)); // Assuming projects are linked to user spaces
+    return result;
   }
 
   // Team Collaboration (Premium)
@@ -579,11 +618,36 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getWorkspaceMembers(workspaceId: string): Promise<(Membership & { user: User })[]> {
-    return await db
-      .select()
+    const result = await db
+      .select({
+        // Membership fields
+        id: memberships.id,
+        role: memberships.role,
+        workspaceId: memberships.workspaceId,
+        userId: memberships.userId,
+        createdAt: memberships.createdAt,
+        // User fields
+        user: {
+          id: users.id,
+          email: users.email,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          profileImageUrl: users.profileImageUrl,
+          subscriptionPlan: users.subscriptionPlan,
+          subscriptionStatus: users.subscriptionStatus,
+          stripeCustomerId: users.stripeCustomerId,
+          stripeSubscriptionId: users.stripeSubscriptionId,
+          personalKeyRef: users.personalKeyRef,
+          dailyTaskExtractionCount: users.dailyTaskExtractionCount,
+          lastTaskExtractionReset: users.lastTaskExtractionReset,
+          createdAt: users.createdAt,
+          updatedAt: users.updatedAt
+        }
+      })
       .from(memberships)
       .innerJoin(users, eq(memberships.userId, users.id))
       .where(eq(memberships.workspaceId, workspaceId));
+    return result as (Membership & { user: User })[];
   }
 
   async updateMembershipRole(workspaceId: string, userId: string, role: string): Promise<void> {

@@ -95,8 +95,32 @@ export default function Sidebar({
     });
   };
 
-  const handleLogout = () => {
-    window.location.href = "/api/logout";
+  const handleLogout = async () => {
+    try {
+      // Clear all queries and cache
+      queryClient.clear();
+      queryClient.removeQueries();
+      
+      // Call logout endpoint
+      await fetch('/api/logout', {
+        method: 'GET',
+        credentials: 'include'
+      });
+
+      // Clear all storage
+      localStorage.clear();
+      sessionStorage.clear();
+      
+      // Force hard reload to landing page
+      window.location.replace('/');
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Clear everything and redirect anyway
+      queryClient.clear();
+      localStorage.clear();
+      sessionStorage.clear();
+      window.location.replace('/');
+    }
   };
 
   const menuItems = [
