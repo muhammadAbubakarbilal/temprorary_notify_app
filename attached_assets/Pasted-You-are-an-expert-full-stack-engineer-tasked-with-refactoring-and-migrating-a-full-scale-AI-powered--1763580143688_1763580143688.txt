@@ -1,0 +1,61 @@
+You are an expert full-stack engineer tasked with refactoring and migrating a full-scale AI-powered productivity project. The current project uses:
+
+- Vite + React frontend (client/src/)
+- Express.js backend (server/index.ts, routes/, controllers/, middleware/)
+- Custom authentication via googleAuth.ts and in-memory sessions
+- PostgreSQL database using Drizzle ORM
+- AI features using OpenAI GPT-4, embeddings, intelligent task extraction, priority analysis
+- Vite dev server + proxy
+- Static serving for production
+
+We want to convert this **entire project** into the following finalized tech stack:
+
+- Frontend: Next.js 15 (App Router), TypeScript, Tailwind, shadcn/ui, Tiptap, React Query
+- Backend: Python 3 + FastAPI, async-ready, modular controllers
+- Database: PostgreSQL (Neon), SQLAlchemy/Tortoise ORM, Alembic for migrations
+- Sessions & Auth: FastAPI SessionMiddleware or JWT tokens, OAuth via Google using Authlib
+- AI Integration: OpenAI GPT-4 for task extraction, embeddings for intelligent suggestions, priority/time estimation
+- Dev/Prod Workflow: Frontend and backend separate servers; environment variables in `.env.local` (frontend) and `.env` (backend)
+- Enterprise-ready: handle freemium and premium tiers, cost-effective AI usage, logging, analytics
+- Fully portable: project must run locally in VS Code or any standard machine without Replit-specific dependencies
+
+---
+
+### **Migration Requirements**
+
+#### 1. Frontend Migration (Next.js)
+- Remove Vite entirely.
+- Move all React components from `client/src/` → `app/` structure:
+    - Components → `app/components/`
+    - Pages → `app/(page folders)/page.tsx`
+- Update all imports to be Next.js-compatible.
+- Convert all API calls to call FastAPI backend using `NEXT_PUBLIC_API_URL`.
+- Maintain Tailwind, shadcn/ui, Tiptap, React Query, Kanban Drag-and-Drop, React Hook Form.
+- Move static assets to `public/`.
+- Logging middleware → Next.js-compatible logger.
+- Ensure all pages render correctly and all UI/UX behavior is preserved.
+- Include `.env.local.example` for local API URL, Google OAuth keys, and other secrets.
+- Ensure `npm install`, `npm run dev`, `npm run build`, `npm start` work locally.
+
+#### 2. Backend Migration (FastAPI)
+- Remove Express entirely.
+- Convert each Express route → FastAPI route:
+    - `GET`, `POST`, `PUT`, `DELETE` mapped to FastAPI decorators.
+    - `req.body`, `req.params`, `req.query` → FastAPI equivalents.
+    - Keep JSON responses identical.
+- Convert middleware:
+    - Express Map sessions → FastAPI SessionMiddleware or JWT tokens.
+    - GoogleAuth → FastAPI OAuth via Authlib.
+    - Logging middleware → Python logging compatible with uvicorn.
+- Controllers → Python modules.
+- Database:
+    - Convert Drizzle ORM to SQLAlchemy or Tortoise ORM.
+    - Keep schema structure identical.
+    - Use Alembic for migrations.
+- Include CORS middleware for frontend API calls.
+- Keep all premium/freemium logic intact.
+- Include `.env.example` for database URL, AI API keys, OAuth secrets.
+- Ensure `pip install -r requirements.txt` and `uvicorn backend.main:app --reload` work locally.
+
+#### 3. Folder Structure
+
