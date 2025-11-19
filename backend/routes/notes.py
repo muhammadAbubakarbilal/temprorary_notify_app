@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from backend.database import get_db
-from backend.models import Note
+from backend.models import Note, User
+from backend.dependencies import get_current_active_user
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -44,17 +45,26 @@ class NoteResponse(BaseModel):
         from_attributes = True
 
 @router.get("/projects/{project_id}/notes", response_model=List[NoteResponse])
-async def get_project_notes(project_id: str, db: Session = Depends(get_db)):
+async def get_project_notes(
+    project_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
     notes = db.query(Note).filter(Note.project_id == project_id).all()
     return notes
 
 @router.post("/projects/{project_id}/notes", response_model=NoteResponse)
-async def create_note(project_id: str, note: NoteCreate, db: Session = Depends(get_db)):
+async def create_note(
+    project_id: str,
+    note: NoteCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
     new_note = Note(
         project_id=project_id,
         space_id=note.spaceId,
         workspace_id=note.workspaceId,
-        author_id=note.authorId,
+        author_id=current_user.id,
         title=note.title,
         content=note.content,
         tags=note.tags,
@@ -67,7 +77,12 @@ async def create_note(project_id: str, note: NoteCreate, db: Session = Depends(g
     return new_note
 
 @router.put("/notes/{note_id}", response_model=NoteResponse)
-async def update_note(note_id: str, note_update: NoteUpdate, db: Session = Depends(get_db)):
+async def update_note(
+    note_id: str,
+    note_update: NoteUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
     note = db.query(Note).filter(Note.id == note_id).first()
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
@@ -88,7 +103,11 @@ async def update_note(note_id: str, note_update: NoteUpdate, db: Session = Depen
     return note
 
 @router.delete("/notes/{note_id}")
-async def delete_note(note_id: str, db: Session = Depends(get_db)):
+async def delete_note(
+    note_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
     note = db.query(Note).filter(Note.id == note_id).first()
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")

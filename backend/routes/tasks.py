@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from backend.database import get_db
-from backend.models import Task
+from backend.models import Task, User
+from backend.dependencies import get_current_active_user
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -46,12 +47,21 @@ class TaskResponse(BaseModel):
         from_attributes = True
 
 @router.get("/projects/{project_id}/tasks", response_model=List[TaskResponse])
-async def get_project_tasks(project_id: str, db: Session = Depends(get_db)):
+async def get_project_tasks(
+    project_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
     tasks = db.query(Task).filter(Task.project_id == project_id).all()
     return tasks
 
 @router.post("/projects/{project_id}/tasks", response_model=TaskResponse)
-async def create_task(project_id: str, task: TaskCreate, db: Session = Depends(get_db)):
+async def create_task(
+    project_id: str,
+    task: TaskCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
     new_task = Task(
         project_id=project_id,
         note_id=task.noteId,
@@ -69,7 +79,12 @@ async def create_task(project_id: str, task: TaskCreate, db: Session = Depends(g
     return new_task
 
 @router.put("/tasks/{task_id}", response_model=TaskResponse)
-async def update_task(task_id: str, task_update: TaskUpdate, db: Session = Depends(get_db)):
+async def update_task(
+    task_id: str,
+    task_update: TaskUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -94,7 +109,11 @@ async def update_task(task_id: str, task_update: TaskUpdate, db: Session = Depen
     return task
 
 @router.delete("/tasks/{task_id}")
-async def delete_task(task_id: str, db: Session = Depends(get_db)):
+async def delete_task(
+    task_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")

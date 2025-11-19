@@ -1,0 +1,45 @@
+from fastapi import Depends, HTTPException, status, Cookie
+from sqlalchemy.orm import Session
+from jose import JWTError, jwt
+from typing import Optional
+import os
+import secrets
+
+from backend.database import get_db
+from backend.models import User
+
+SECRET_KEY = os.getenv("SECRET_KEY") or secrets.token_urlsafe(32)
+ALGORITHM = "HS256"
+
+async def get_current_user(
+    access_token: Optional[str] = Cookie(None),
+    db: Session = Depends(get_db)
+) -> User:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Not authenticated",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    if not access_token:
+        raise credentials_exception
+    
+    try:
+        token = access_token.replace("Bearer ", "")
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise credentials_exception
+    
+    return user
+
+async def get_current_active_user(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    return current_user

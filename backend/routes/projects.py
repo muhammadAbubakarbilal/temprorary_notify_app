@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from backend.database import get_db
-from backend.models import Project
+from backend.models import Project, User
+from backend.dependencies import get_current_active_user
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -37,12 +38,19 @@ class ProjectResponse(BaseModel):
         from_attributes = True
 
 @router.get("/", response_model=List[ProjectResponse])
-async def get_projects(db: Session = Depends(get_db)):
+async def get_projects(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
     projects = db.query(Project).filter(Project.status == 'active').all()
     return projects
 
 @router.post("/", response_model=ProjectResponse)
-async def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
+async def create_project(
+    project: ProjectCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
     new_project = Project(
         name=project.name,
         description=project.description,
@@ -57,7 +65,11 @@ async def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
     return new_project
 
 @router.get("/{project_id}", response_model=ProjectResponse)
-async def get_project(project_id: str, db: Session = Depends(get_db)):
+async def get_project(
+    project_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -66,7 +78,8 @@ async def get_project(project_id: str, db: Session = Depends(get_db)):
 @router.put("/{project_id}", response_model=ProjectResponse)
 async def update_project(
     project_id: str, 
-    project_update: ProjectUpdate, 
+    project_update: ProjectUpdate,
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -87,7 +100,11 @@ async def update_project(
     return project
 
 @router.delete("/{project_id}")
-async def delete_project(project_id: str, db: Session = Depends(get_db)):
+async def delete_project(
+    project_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
