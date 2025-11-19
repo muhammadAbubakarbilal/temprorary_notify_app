@@ -1,17 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, Request
 from sqlalchemy.orm import Session
-from database import get_db
-from models import User
+from backend.database import get_db
+from backend.models import User
 from pydantic import BaseModel
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 import os
+import secrets
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+SECRET_KEY = os.getenv("SECRET_KEY") or secrets.token_urlsafe(32)
+if not os.getenv("SECRET_KEY"):
+    print("WARNING: SECRET_KEY not set in environment. Using generated key for development only!")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
@@ -81,8 +84,9 @@ async def login(user_data: UserLogin, response: Response, db: Session = Depends(
         key="access_token",
         value=f"Bearer {access_token}",
         httponly=True,
+        secure=os.getenv("ENV") == "production",
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        samesite="lax"
+        samesite="strict"
     )
     
     return {

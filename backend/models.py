@@ -1,7 +1,7 @@
 from sqlalchemy import Column, String, Text, Integer, Boolean, DateTime, JSON, ForeignKey, Index
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
-from database import Base
+from backend.database import Base
 import uuid
 
 class Session(Base):
@@ -138,22 +138,67 @@ class Attachment(Base):
     uploaded_by = Column(String, ForeignKey('users.id'), name="uploaded_by")
     created_at = Column(DateTime, default=func.now(), nullable=False, name="created_at")
 
-class RecurringTask(Base):
-    __tablename__ = "recurring_tasks"
+class RecurrenceRule(Base):
+    __tablename__ = "recurrence_rules"
     
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     series_id = Column(String, nullable=False, name="series_id")
-    template_task_id = Column(String, ForeignKey('tasks.id'), nullable=False, name="template_task_id")
-    recurrence_pattern = Column(Text, nullable=False, name="recurrence_pattern")
-    interval_value = Column(Integer, name="interval_value")
-    interval_unit = Column(Text, name="interval_unit")
-    days_of_week = Column(JSON, name="days_of_week")
-    day_of_month = Column(Integer, name="day_of_month")
-    month_of_year = Column(Integer, name="month_of_year")
+    pattern = Column(Text, nullable=False)
+    interval = Column(Integer, nullable=False, default=1)
+    weekdays = Column(JSON, default=list)
+    month_day = Column(Integer, name="month_day")
     end_date = Column(DateTime, name="end_date")
     max_occurrences = Column(Integer, name="max_occurrences")
-    current_occurrence = Column(Integer, nullable=False, default=0, name="current_occurrence")
-    last_generated_date = Column(DateTime, name="last_generated_date")
-    is_active = Column(Boolean, nullable=False, default=True, name="is_active")
+    created_at = Column(DateTime, default=func.now(), nullable=False, name="created_at")
+
+class Subtask(Base):
+    __tablename__ = "subtasks"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    parent_task_id = Column(String, ForeignKey('tasks.id'), nullable=False, name="parent_task_id")
+    title = Column(Text, nullable=False)
+    description = Column(Text)
+    status = Column(Text, nullable=False, default='todo')
+    order = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=func.now(), nullable=False, name="created_at")
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False, name="updated_at")
+
+class BoardColumn(Base):
+    __tablename__ = "board_columns"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(String, ForeignKey('projects.id'), nullable=False, name="project_id")
+    name = Column(Text, nullable=False)
+    order = Column(Integer, nullable=False)
+    color = Column(Text)
+    created_at = Column(DateTime, default=func.now(), nullable=False, name="created_at")
+
+class TaskBoardPosition(Base):
+    __tablename__ = "task_board_positions"
+    
+    task_id = Column(String, ForeignKey('tasks.id'), nullable=False, name="task_id")
+    column_id = Column(String, ForeignKey('board_columns.id'), nullable=False, name="column_id")
+    order = Column(Integer, nullable=False)
+
+class FeatureFlag(Base):
+    __tablename__ = "feature_flags"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    scope_type = Column(Text, nullable=False, name="scope_type")
+    scope_id = Column(String, nullable=False, name="scope_id")
+    key = Column(Text, nullable=False)
+    value = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False, name="created_at")
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False, name="updated_at")
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workspace_id = Column(String, ForeignKey('workspaces.id'), name="workspace_id")
+    actor_id = Column(String, ForeignKey('users.id'), nullable=False, name="actor_id")
+    action = Column(Text, nullable=False)
+    target_type = Column(Text, nullable=False, name="target_type")
+    target_id = Column(String, nullable=False, name="target_id")
+    diff_json = Column(JSON, name="diff_json")
+    created_at = Column(DateTime, default=func.now(), nullable=False, name="created_at")
