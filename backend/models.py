@@ -36,6 +36,7 @@ class Space(Base):
     __tablename__ = "spaces"
     
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_id = Column(String, ForeignKey('users.id'), nullable=False, name="owner_id")
     type = Column(Text, nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False, name="created_at")
 

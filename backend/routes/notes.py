@@ -4,6 +4,7 @@ from typing import List
 from backend.database import get_db
 from backend.models import Note, User
 from backend.dependencies import get_current_active_user
+from backend.utils.permissions import verify_project_access, verify_note_access
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -50,6 +51,9 @@ async def get_project_notes(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    if not verify_project_access(project_id, current_user.id, db):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     notes = db.query(Note).filter(Note.project_id == project_id).all()
     return notes
 
@@ -60,6 +64,9 @@ async def create_note(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    if not verify_project_access(project_id, current_user.id, db):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     new_note = Note(
         project_id=project_id,
         space_id=note.spaceId,
@@ -83,6 +90,9 @@ async def update_note(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    if not verify_note_access(note_id, current_user.id, db):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     note = db.query(Note).filter(Note.id == note_id).first()
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
@@ -108,6 +118,9 @@ async def delete_note(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    if not verify_note_access(note_id, current_user.id, db):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     note = db.query(Note).filter(Note.id == note_id).first()
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")

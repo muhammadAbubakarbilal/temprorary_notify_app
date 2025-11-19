@@ -3,7 +3,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 export async function apiRequest(url: string, options: RequestInit = {}) {
   const response = await fetch(`${API_URL}${url}`, {
     ...options,
-    credentials: 'include',
+    credentials: 'include', // This is critical - includes cookies
     headers: {
       'Content-Type': 'application/json',
       ...options.headers,
@@ -15,7 +15,12 @@ export async function apiRequest(url: string, options: RequestInit = {}) {
     throw new Error(error.message || 'Request failed');
   }
 
-  return response.json();
+  // Handle empty responses (like from DELETE)
+  const contentType = response.headers.get('content-type');
+  if (contentType && contentType.includes('application/json')) {
+    return response.json();
+  }
+  return null;
 }
 
 export const api = {

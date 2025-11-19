@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import os
-from backend.routes import auth, projects, notes, tasks, ai
+from backend.routes import auth, projects, notes, tasks, ai, workspaces, timer, reports
 
 load_dotenv()
 
@@ -27,6 +27,9 @@ app.include_router(projects.router)
 app.include_router(notes.router)
 app.include_router(tasks.router)
 app.include_router(ai.router)
+app.include_router(workspaces.router)
+app.include_router(timer.router)
+app.include_router(reports.router)
 
 @app.get("/")
 async def root():

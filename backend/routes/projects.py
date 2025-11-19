@@ -4,6 +4,7 @@ from typing import List
 from backend.database import get_db
 from backend.models import Project, User
 from backend.dependencies import get_current_active_user
+from backend.utils.permissions import get_user_workspace_ids, get_user_space_ids, verify_project_access
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -42,7 +43,13 @@ async def get_projects(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    projects = db.query(Project).filter(Project.status == 'active').all()
+    user_workspaces = get_user_workspace_ids(current_user.id, db)
+    user_spaces = get_user_space_ids(current_user.id, db)
+    
+    projects = db.query(Project).filter(
+        Project.status == 'active',
+        (Project.workspace_id.in_(user_workspaces)) | (Project.space_id.in_(user_spaces))
+    ).all()
     return projects
 
 @router.post("/", response_model=ProjectResponse)
@@ -70,6 +77,9 @@ async def get_project(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    if not verify_project_access(project_id, current_user.id, db):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -82,6 +92,9 @@ async def update_project(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    if not verify_project_access(project_id, current_user.id, db):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -105,6 +118,9 @@ async def delete_project(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    if not verify_project_access(project_id, current_user.id, db):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")

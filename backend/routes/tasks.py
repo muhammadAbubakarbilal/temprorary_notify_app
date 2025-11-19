@@ -4,6 +4,7 @@ from typing import List
 from backend.database import get_db
 from backend.models import Task, User
 from backend.dependencies import get_current_active_user
+from backend.utils.permissions import verify_project_access, verify_task_access
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -52,6 +53,9 @@ async def get_project_tasks(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    if not verify_project_access(project_id, current_user.id, db):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     tasks = db.query(Task).filter(Task.project_id == project_id).all()
     return tasks
 
@@ -62,6 +66,9 @@ async def create_task(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    if not verify_project_access(project_id, current_user.id, db):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     new_task = Task(
         project_id=project_id,
         note_id=task.noteId,
@@ -85,6 +92,9 @@ async def update_task(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    if not verify_task_access(task_id, current_user.id, db):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -114,6 +124,9 @@ async def delete_task(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    if not verify_task_access(task_id, current_user.id, db):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
