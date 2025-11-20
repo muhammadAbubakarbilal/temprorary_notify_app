@@ -4,11 +4,20 @@ from backend.database import get_db
 from pydantic import BaseModel
 from typing import List
 import os
-from openai import OpenAI
+try:
+    from openai import OpenAI
+except Exception:
+    OpenAI = None  # type: ignore
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Do not instantiate the OpenAI client at import time so the app can
+# start without an API key. We'll create a client lazily when needed.
+def get_openai_client():
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key or OpenAI is None:
+        return None
+    return OpenAI(api_key=api_key)
 
 class ExtractTasksRequest(BaseModel):
     content: str
@@ -28,6 +37,18 @@ class AnalyzePriorityRequest(BaseModel):
 
 @router.post("/extract-tasks", response_model=List[ExtractedTask])
 async def extract_tasks(request: ExtractTasksRequest):
+    # If no API key is present, return a mock response so the app can run
+    client = get_openai_client()
+    if client is None:
+        return [
+            {
+                "title": "Review and implement suggestions from content",
+                "description": "Based on the note content provided",
+                "priority": "medium",
+                "dueDate": None
+            }
+        ]
+
     try:
         # Use OpenAI to extract tasks from content
         response = client.chat.completions.create(
@@ -38,9 +59,9 @@ async def extract_tasks(request: ExtractTasksRequest):
             ],
             temperature=0.7
         )
-        
-        # For now, return a mock response
+
         # In production, parse the response.choices[0].message.content
+        # For now, keep the same mock as fallback
         return [
             {
                 "title": "Review and implement suggestions from content",

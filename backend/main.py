@@ -41,4 +41,6 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # Use the import string for the module so the reloader can import
+    # the app correctly when running with `-m` or in reload mode.
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)

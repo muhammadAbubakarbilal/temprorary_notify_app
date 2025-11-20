@@ -1,31 +1,26 @@
-from fastapi import Depends, HTTPException, status, Cookie
-from sqlalchemy.orm import Session
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from typing import Optional
-import os
-import secrets
-
+from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.models import User
+import os
 
-SECRET_KEY = os.getenv("SECRET_KEY") or secrets.token_urlsafe(32)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 ALGORITHM = "HS256"
 
 async def get_current_user(
-    access_token: Optional[str] = Cookie(None),
+    token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
 ) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Not authenticated",
+        detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
-    if not access_token:
-        raise credentials_exception
-    
     try:
-        token = access_token.replace("Bearer ", "")
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
         if user_id is None:
@@ -36,10 +31,23 @@ async def get_current_user(
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise credentials_exception
-    
     return user
 
 async def get_current_active_user(
     current_user: User = Depends(get_current_user)
 ) -> User:
+    if current_user.subscription_status != 'active':
+        raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
+
+def require_role(required_role: str):
+    """Dependency for role-based access control"""
+    async def role_checker(current_user: User = Depends(get_current_active_user)):
+        # This is a simplified RBAC - extend based on your needs
+        if required_role == "admin" and current_user.subscription_plan != "enterprise":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions"
+            )
+        return current_user
+    return role_checker

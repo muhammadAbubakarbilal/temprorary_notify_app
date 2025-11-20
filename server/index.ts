@@ -3,37 +3,50 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { setupAuth } from "./googleAuth";
 
+// Extend Express Request type for session
+declare module "express-serve-static-core" {
+  interface Request {
+    session?: Record<string, any>;
+  }
+}
+
 const app = express();
 
 // Session middleware (simple in-memory sessions for development)
-const sessions = new Map();
-app.use((req: any, res, next) => {
-  const sessionId = req.headers['session-id'] || Math.random().toString(36);
+const sessions = new Map<string, Record<string, any>>();
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const sessionId = req.headers["session-id"]?.toString() || Math.random().toString(36);
   req.session = sessions.get(sessionId) || {};
-  res.setHeader('session-id', sessionId);
-  
-  // Save session on response end
-  const originalEnd = res.end;
-  res.end = function(...args: any[]) {
-    sessions.set(sessionId, req.session);
-    originalEnd.apply(res, args);
+  res.setHeader("session-id", sessionId);
+
+  // Bind the original `end` and replace with a wrapper that accepts
+  // any arguments. Using `any` here avoids TypeScript overload
+  // incompatibilities when assigning to `res.end`.
+  const originalEnd = (res.end as (...args: any[]) => Response).bind(res);
+
+  (res as any).end = function (...args: any[]) {
+    sessions.set(sessionId, req.session!);
+    return originalEnd(...args);
   };
-  
+
   next();
 });
 
+// Body parsing
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-app.use((req, res, next) => {
+// Logging middleware
+app.use((req: Request, res: Response, next: NextFunction) => {
   const start = Date.now();
   const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+  let capturedJsonResponse: Record<string, any> | undefined;
 
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
+  const originalResJson = res.json.bind(res);
+  res.json = function (bodyJson: any) {
     capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
+    return originalResJson(bodyJson);
   };
 
   res.on("finish", () => {
@@ -56,11 +69,12 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Setup manual authentication FIRST
+  // Setup manual authentication first
   await setupAuth(app);
-  
+
   const server = await registerRoutes(app);
 
+  // Error handler
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
@@ -69,25 +83,21 @@ app.use((req, res, next) => {
     throw err;
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
+  // Setup Vite or static files
   if (app.get("env") === "development") {
     await setupVite(app, server);
   } else {
     serveStatic(app);
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || '5000', 10);
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
+  // Start server
+  const port = parseInt(process.env.PORT || "5000", 10);
+  const listenOptions: any = { port, host: "0.0.0.0" };
+  if (process.platform !== "win32") {
+    listenOptions.reusePort = true;
+  }
+
+  server.listen(listenOptions, () => {
     log(`serving on port ${port}`);
   });
 })();

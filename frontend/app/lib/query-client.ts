@@ -1,12 +1,13 @@
 'use client';
 
-import { QueryClient } from '@tanstack/react-query';
+import { QueryClient, type QueryFunctionContext } from '@tanstack/react-query';
 import { apiRequest } from './api-client';
 
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      queryFn: async ({ queryKey }) => {
+      // explicitly type the parameter to avoid implicit `any` under `strict` mode
+      queryFn: async ({ queryKey }: QueryFunctionContext) => {
         const url = queryKey[0] as string;
         return apiRequest(url);
       },

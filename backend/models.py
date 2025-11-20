@@ -177,8 +177,8 @@ class BoardColumn(Base):
 class TaskBoardPosition(Base):
     __tablename__ = "task_board_positions"
     
-    task_id = Column(String, ForeignKey('tasks.id'), nullable=False, name="task_id")
-    column_id = Column(String, ForeignKey('board_columns.id'), nullable=False, name="column_id")
+    task_id = Column(String, ForeignKey('tasks.id'), nullable=False, name="task_id", primary_key=True)
+    column_id = Column(String, ForeignKey('board_columns.id'), nullable=False, name="column_id", primary_key=True)
     order = Column(Integer, nullable=False)
 
 class FeatureFlag(Base):
