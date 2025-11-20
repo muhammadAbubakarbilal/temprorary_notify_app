@@ -77,3 +77,12 @@ dump.rdb
 *.tmp
 *.temp
 .cache/
+
+# Old migration artifacts
+client/
+server/
+shared/
+migrate_ui_components.py
+CLEANUP_SCRIPT.md
+MIGRATION_COMPLETION_PLAN.md
+
