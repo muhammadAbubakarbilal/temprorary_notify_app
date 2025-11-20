@@ -6,8 +6,11 @@ import { Button } from '@/app/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
-import { apiRequest } from '@/app/lib/api-client';
+import { api } from '@/app/lib/api-client';
 import { queryClient } from '@/app/lib/query-client';
+
+export const dynamic = 'force-dynamic';
+export const revalidate = false;
 
 interface Project {
   id: string;
@@ -31,14 +34,11 @@ export default function DashboardPage() {
     if (!newProjectName.trim()) return;
 
     try {
-      await apiRequest('/api/projects', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: newProjectName,
-          description: '',
-          color: '#6366F1',
-          status: 'active'
-        }),
+      await api.post('/api/projects', {
+        name: newProjectName,
+        description: '',
+        color: '#6366F1',
+        status: 'active'
       });
 
       setNewProjectName('');

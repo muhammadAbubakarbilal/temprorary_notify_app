@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { apiRequest } from '@/app/lib/api-client';
+import { api } from '@/app/lib/api-client';
 import { useRouter } from 'next/navigation';
 
 interface User {
@@ -30,8 +30,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshUser = async () => {
     try {
-      const userData = await apiRequest('/api/auth/me');
-      setUser(userData);
+      const userData = await api.get<{ user: User }>('/api/auth/me');
+      if (userData?.user) {
+        setUser(userData.user);
+      }
     } catch (error) {
       setUser(null);
     }
@@ -43,17 +45,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
-    const response = await apiRequest('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
-    setUser(response.user);
-    router.push('/dashboard');
+    const response = await api.post<{ user: User }>('/api/auth/login', { email, password });
+    if (response?.user) {
+      setUser(response.user);
+      router.push('/dashboard');
+    }
   };
 
   const logout = async () => {
     try {
-      await apiRequest('/api/auth/logout', { method: 'POST' });
+      await api.post('/api/auth/logout');
     } catch (error) {
       // Ignore errors on logout
     }
@@ -62,12 +63,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const register = async (email: string, password: string, name: string) => {
-    const response = await apiRequest('/api/auth/register', {
-      method: 'POST',
-      body: JSON.stringify({ email, password, name }),
-    });
-    setUser(response.user);
-    router.push('/dashboard');
+    const response = await api.post<{ user: User }>('/api/auth/register', { email, password, name });
+    if (response?.user) {
+      setUser(response.user);
+      router.push('/dashboard');
+    }
   };
 
   return (

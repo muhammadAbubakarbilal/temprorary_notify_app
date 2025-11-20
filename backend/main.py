@@ -1,3 +1,11 @@
+"""
+FastAPI backend server for Notify App.
+- Serves API endpoints for task/note/project/workspace management
+- Integrates with SQLAlchemy ORM + Alembic migrations
+- Handles CORS for Next.js frontend (localhost:3000)
+- Provides session-based authentication via cookies
+"""
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -7,17 +15,19 @@ from backend.routes import auth, projects, notes, tasks, ai, workspaces, timer, 
 load_dotenv()
 
 app = FastAPI(
-    title="AI Productivity Platform API",
-    description="FastAPI backend for AI-powered productivity and note-taking platform",
+    title="Notify App API",
+    description="Backend API for task management, notes, and project tracking",
     version="1.0.0"
 )
 
-# CORS middleware for frontend communication
+# Configure CORS for Next.js frontend
+# Allows cookies and credentials to be sent with requests
+frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("FRONTEND_URL", "http://localhost:3000")],
+    allow_origins=[frontend_url, "http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -41,6 +51,9 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    # Use the import string for the module so the reloader can import
-    # the app correctly when running with `-m` or in reload mode.
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
+    # Development server settings
+    # --reload: Auto-restart on file changes
+    # --host: Bind to localhost only (security)
+    # --port: Run on port 8000
+    # --log-level: Set to 'info' for verbose logs, 'warning' for less verbose
+    uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, reload=True, log_level="info")

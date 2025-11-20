@@ -1,5 +1,8 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = false;
+
 import Link from 'next/link';
 import { Button } from '@/app/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/app/components/ui/card';
@@ -71,9 +74,11 @@ export default function SubscribePage() {
               </div>
             </CardHeader>
             <CardContent>
-              <Button className="w-full mb-6" variant="outline" asChild>
-                <Link href="/dashboard">Current Plan</Link>
-              </Button>
+              <Link href="/dashboard">
+                <Button className="w-full mb-6" variant="outline">
+                  Current Plan
+                </Button>
+              </Link>
               
               <div className="space-y-3">
                 <h4 className="font-semibold text-green-700 dark:text-green-400">✅ Included (Free):</h4>
